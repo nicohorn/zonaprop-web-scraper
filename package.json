@@ -1,0 +1,21 @@
+{
+  "name": "zonaprop-scraper",
+  "version": "0.2.0",
+  "description": "Scraper de avisos de ZonaProp (listado + ficha) con Puppeteer, para análisis de datos",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "start": "node src/server.js --open",
+    "scrape": "node src/scrape.js",
+    "inspect": "node scripts/inspect.js",
+    "csv": "node scripts/to-csv.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "csv-stringify": "^6.9.0",
+    "puppeteer": "^25.12.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

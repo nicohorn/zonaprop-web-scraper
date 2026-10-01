@@ -1,0 +1,5 @@
+node_modules/
+.perfil-chrome/
+.runtime/
+data/
+debug/

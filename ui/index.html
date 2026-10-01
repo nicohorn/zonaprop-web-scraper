@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZonaProp Scraper</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --ink: #1c2330; --muted: #667085; --line: #e2e5ea;
+    --accent: #e8590c; --accent-ink: #ffffff; --ok: #1a7f4b; --warn: #b45309; --warn-bg: #fff4e0;
+    --chip: #eef0f4; --log-bg: #12161d; --log-ink: #cfd6e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --panel: #1b2027; --ink: #e6e9ee; --muted: #98a2b3; --line: #2c333d;
+      --chip: #262d37; --warn-bg: #3a2a10; --warn: #f5b454; --ok: #4cc38a; --log-bg: #0c0f13;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  main { display: grid; grid-template-columns: minmax(340px, 440px) 1fr; gap: 20px; padding: 20px 24px; max-width: 1400px; margin: 0 auto; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  section + section { margin-top: 20px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 12px; }
+  label.field { display: block; font-weight: 600; margin: 16px 0 6px; }
+  label.field:first-of-type { margin-top: 0; }
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; user-select: none; color: var(--ink); font-family: inherit; }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .chip:disabled { opacity: .55; cursor: default; }
+  textarea, input[type=number] { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font: inherit; }
+  textarea { resize: vertical; min-height: 64px; font-size: 13px; font-family: ui-monospace, Consolas, monospace; }
+  .row { display: flex; gap: 12px; }
+  .row > * { flex: 1; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; }
+  .check input { margin-top: 4px; }
+  details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .btn { font: inherit; font-weight: 600; border-radius: 8px; padding: 9px 18px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.small { padding: 6px 12px; font-weight: 500; font-size: 13px; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pill { font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: var(--chip); color: var(--muted); white-space: nowrap; }
+  .pill.running { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .banner { display: none; background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 12px 14px; margin-top: 14px; font-weight: 600; }
+  .banner.show { display: block; }
+  .now { color: var(--muted); margin-top: 12px; font-size: 14px; min-height: 21px; overflow-wrap: anywhere; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .stat { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12.5px; }
+  .stat small { color: var(--ok); font-weight: 600; }
+  #log { background: var(--log-bg); color: var(--log-ink); border-radius: 8px; padding: 12px; height: 380px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+  .data-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  a.btn { text-decoration: none; display: inline-block; line-height: 1.2; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ZonaProp Scraper</h1>
+  <span id="pill" class="pill">Conectando…</span>
+  <button class="btn small" id="shutdown" title="Detiene la corrida y cierra el programa">Cerrar programa</button>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Qué buscar</h2>
+      <form id="form">
+        <label class="field">Operación</label>
+        <div class="chips" id="operaciones"></div>
+
+        <label class="field">Tipo de propiedad</label>
+        <div class="chips" id="tipos"></div>
+        <p class="hint">Sin ninguno marcado = todos los tipos.</p>
+
+        <label class="field" for="zonas">Zonas</label>
+        <textarea id="zonas" rows="3" placeholder="Una por línea: rosario, palermo, villa urquiza…"></textarea>
+        <div class="chips" id="zonas-sugeridas" style="margin-top:8px"></div>
+        <p class="hint">Vacío = todo el país. Se escriben como en la URL del sitio; si una no existe, se avisa en el registro y se saltea.</p>
+
+        <div class="check"><input type="checkbox" id="scrapeDetails"><label for="scrapeDetails"><b>Visitar la ficha de cada aviso</b><br><span class="hint">Trae descripción completa, amenities, antigüedad y todas las fotos. Es lento (unas 15.000 fichas por día): empieza cuando termina el listado.</span></label></div>
+        <div class="check"><input type="checkbox" id="includeDevelopments"><label for="includeDevelopments">Incluir emprendimientos</label></div>
+        <div class="check"><input type="checkbox" id="trackChanges"><label for="trackChanges"><b>Guardar historial de cambios</b><br><span class="hint">Si un aviso ya guardado reaparece con otro precio, expensas, superficie o ambientes, se guarda una versión nueva en vez de ignorarlo. Se nota al volver a explorar: las búsquedas ya terminadas no se repiten solas.</span></label></div>
+
+        <details>
+          <summary>Opciones avanzadas</summary>
+          <label class="field" for="urls">Búsquedas armadas a mano</label>
+          <textarea id="urls" rows="2" placeholder="https://www.zonaprop.com.ar/departamentos-venta-palermo-con-balcon.html"></textarea>
+          <p class="hint">Hacé la búsqueda en ZonaProp con los filtros que quieras y pegá la URL (una por línea). Se suman a las de arriba.</p>
+
+          <label class="field">Pausa entre páginas (segundos)</label>
+          <div class="row">
+            <input type="number" id="delayMin" min="1" max="120" step="0.5" aria-label="Pausa mínima">
+            <input type="number" id="delayMax" min="1" max="300" step="0.5" aria-label="Pausa máxima">
+          </div>
+          <p class="hint">Mínima y máxima. Bajarla aumenta las verificaciones de seguridad.</p>
+
+          <div class="row">
+            <div><label class="field" for="maxPagesPerSearch">Páginas por búsqueda</label><input type="number" id="maxPagesPerSearch" min="1" max="500"></div>
+            <div><label class="field" for="maxDetailsPerRun">Tope de fichas por corrida</label><input type="number" id="maxDetailsPerRun" min="1" placeholder="sin tope"></div>
+          </div>
+          <p class="hint">Una búsqueda con más avisos que los que entran en esas páginas se parte sola por rango de precio. El sitio deja de paginar pasadas las 500.</p>
+
+          <div class="check"><input type="checkbox" id="headless"><label for="headless">Ocultar la ventana del navegador<br><span class="hint">Sólo cuando ya corrió bien con ventana: oculto no se puede resolver la verificación de seguridad.</span></label></div>
+          <div class="check"><input type="checkbox" id="blockResources"><label for="blockResources">No cargar imágenes (más rápido, más verificaciones)</label></div>
+        </details>
+      </form>
+    </section>
+
+    <section>
+      <h2>Datos</h2>
+      <div class="data-actions">
+        <a class="btn small" href="/api/export/listings.csv">Descargar avisos (CSV)</a>
+        <a class="btn small" href="/api/export/details.csv">Descargar fichas (CSV)</a>
+        <a class="btn small" href="/api/export/history.csv" title="Todas las versiones de cada aviso, si se guardó historial de cambios">Descargar historial (CSV)</a>
+        <button class="btn small" id="open-data">Abrir carpeta de datos</button>
+        <button class="btn small" id="reset">Volver a explorar desde cero</button>
+      </div>
+      <p class="hint" id="data-dir"></p>
+      <p class="hint">Cada corrida retoma donde quedó la anterior y no repite búsquedas ya terminadas. "Volver a explorar" las recorre de nuevo para sumar avisos publicados después; lo ya guardado no se borra.</p>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>Corrida</h2>
+      <div class="controls">
+        <button class="btn primary" id="start">Iniciar</button>
+        <button class="btn" id="stop" disabled>Detener</button>
+        <span class="hint" id="plan"></span>
+      </div>
+      <div class="banner" id="banner"></div>
+      <div class="now" id="now"></div>
+      <div class="stats">
+        <div class="stat"><b id="s-listings">–</b><span>avisos guardados</span> <small id="s-new-listings"></small></div>
+        <div class="stat"><b id="s-details">–</b><span>fichas guardadas</span> <small id="s-new-details"></small></div>
+        <div class="stat"><b id="s-pending">–</b><span>fichas pendientes</span></div>
+        <div class="stat"><b id="s-searches">–</b><span>búsquedas completas</span></div>
+        <div class="stat"><b id="s-rate">–</b><span id="s-rate-label">avisos por hora</span></div>
+        <div class="stat"><b id="s-failures">–</b><span>fallos</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Registro</h2>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => (n == null ? '–' : Number(n).toLocaleString('es-AR'));
+const api = async (path, body) => {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data;
+};
+
+let status = { state: 'idle' };
+let connected = false;
+
+// --- Formulario ------------------------------------------------------------------------------
+const CHECKS = ['scrapeDetails', 'includeDevelopments', 'trackChanges', 'headless', 'blockResources'];
+const NUMBERS = ['delayMin', 'delayMax', 'maxPagesPerSearch', 'maxDetailsPerRun'];
+const lines = (id) => $(id).value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+const pressed = (id) => [...$(id).querySelectorAll('[aria-pressed="true"]')].map((b) => b.dataset.value);
+
+function chip(value, label, on) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.dataset.value = value; b.textContent = label;
+  b.setAttribute('aria-pressed', String(on));
+  return b;
+}
+
+function readForm() {
+  const s = { operaciones: pressed('operaciones'), tipos: pressed('tipos'), zonas: lines('zonas'), urls: lines('urls') };
+  for (const id of CHECKS) s[id] = $(id).checked;
+  for (const id of NUMBERS) s[id] = $(id).value === '' ? null : Number($(id).value);
+  return s;
+}
+
+function fillForm(settings, options) {
+  $('operaciones').replaceChildren(...options.operaciones.map((o) => chip(o.slug, o.label, settings.operaciones.includes(o.slug))));
+  $('tipos').replaceChildren(...options.tipos.map((t) => chip(t.slug, t.label, settings.tipos.includes(t.slug))));
+  $('zonas-sugeridas').replaceChildren(...options.zonas.map((z) => chip(z, z, false)));
+  $('zonas').value = settings.zonas.join('\n');
+  $('urls').value = settings.urls.join('\n');
+  for (const id of CHECKS) $(id).checked = settings[id];
+  for (const id of NUMBERS) $(id).value = settings[id] ?? '';
+  syncZoneChips();
+  showPlan();
+}
+
+function syncZoneChips() {
+  const current = new Set(lines('zonas'));
+  for (const b of $('zonas-sugeridas').children) b.setAttribute('aria-pressed', String(current.has(b.dataset.value)));
+}
+
+function showPlan() {
+  const s = readForm();
+  const n = s.operaciones.length * Math.max(1, s.tipos.length) * Math.max(1, s.zonas.length) + s.urls.length;
+  $('plan').textContent = n === 0 ? 'Elegí al menos una operación.'
+    : `${n} ${n === 1 ? 'búsqueda' : 'búsquedas'} de partida${s.zonas.length ? '' : ' · todo el país'}`;
+}
+
+let saveTimer;
+function formChanged() {
+  showPlan();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => api('/api/settings', readForm()).catch(() => {}), 600);
+}
+
+for (const id of ['operaciones', 'tipos']) {
+  $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('.chip');
+    if (!b || b.disabled) return;
+    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+    formChanged();
+  });
+}
+$('zonas-sugeridas').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip');
+  if (!b || b.disabled) return;
+  const current = lines('zonas');
+  const next = current.includes(b.dataset.value) ? current.filter((z) => z !== b.dataset.value) : [...current, b.dataset.value];
+  $('zonas').value = next.join('\n');
+  syncZoneChips();
+  formChanged();
+});
+$('form').addEventListener('input', () => { syncZoneChips(); formChanged(); });
+$('form').addEventListener('submit', (e) => e.preventDefault());
+
+// --- Estado ----------------------------------------------------------------------------------
+function render() {
+  if (!$('pill')) return; // el programa ya se cerró
+  const s = status;
+  const running = s.state !== 'idle';
+  const pill = $('pill');
+  const results = { terminado: 'Terminado', detenido: 'Detenido', error: 'Terminó con error' };
+  pill.className = 'pill' + (!connected || s.attention ? ' warn' : running ? ' running' : '');
+  pill.textContent = !connected ? 'Sin conexión'
+    : s.state === 'stopping' ? 'Deteniendo…'
+    : s.attention === 'verificacion' ? 'Esperando verificación'
+    : s.attention === 'pausa' ? 'En pausa'
+    : running ? (s.phase === 'fichas' ? 'Visitando fichas' : 'Recorriendo listados')
+    : results[s.result] || 'Listo para iniciar';
+
+  const banner = $('banner');
+  const text = !connected ? 'Se perdió la conexión con el programa. Si cerraste la ventana negra, volvé a abrir "Iniciar ZonaProp Scraper".'
+    : s.attention === 'verificacion' ? 'ZonaProp pide una verificación de seguridad. Andá a la ventana de Chrome que abrió el scraper y tildá el casillero; sigue solo.'
+    : s.attention === 'pausa' ? 'En pausa por un problema (verificación sin resolver o fallas de conexión). Reintenta solo en unos minutos.'
+    : '';
+  banner.textContent = text;
+  banner.classList.toggle('show', Boolean(text));
+  document.title = (s.attention === 'verificacion' ? '⚠ Verificación · ' : running ? '● ' : '') + 'ZonaProp Scraper';
+
+  const c = s.current;
+  $('now').textContent = !running || !c ? ''
+    : c.slug ? `${c.slug} · página ${c.page}${c.pages ? ' de ' + fmt(c.pages) : ''}${c.total ? ' · ' + fmt(c.total) + ' avisos en esta búsqueda' : ''}${s.queue ? ' · ' + s.queue + ' en cola' : ''}`
+    : `Ficha del aviso ${c.id}`;
+
+  $('s-listings').textContent = fmt(s.listings);
+  $('s-details').textContent = fmt(s.details);
+  $('s-pending').textContent = fmt(s.detailsPending);
+  $('s-searches').textContent = fmt(s.searchesDone);
+  $('s-failures').textContent = fmt(s.failures);
+  $('s-new-listings').textContent = [s.newListings ? `+${fmt(s.newListings)}` : '', s.changedListings ? `${fmt(s.changedListings)} con cambios` : ''].filter(Boolean).join(' · ');
+  $('s-new-details').textContent = s.newDetails ? `+${fmt(s.newDetails)}` : '';
+
+  const hours = s.startedAt ? ((s.finishedAt ? new Date(s.finishedAt) : new Date()) - new Date(s.startedAt)) / 3.6e6 : 0;
+  const fichas = s.phase === 'fichas';
+  const count = fichas ? s.newDetails : s.newListings;
+  $('s-rate').textContent = hours > 0.01 && count ? fmt(Math.round(count / hours)) : '–';
+  $('s-rate-label').textContent = fichas ? 'fichas por hora' : 'avisos nuevos por hora';
+
+  $('start').disabled = running || !connected;
+  $('stop').disabled = s.state !== 'running';
+  $('reset').disabled = running;
+  for (const el of $('form').querySelectorAll('input, textarea, button')) el.disabled = running;
+}
+
+const logEl = $('log');
+function addLog(lines) {
+  const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+  logEl.append(lines.join('\n') + '\n');
+  while (logEl.childNodes.length > 1500) logEl.firstChild.remove();
+  if (stick) logEl.scrollTop = logEl.scrollHeight;
+}
+
+// --- Acciones --------------------------------------------------------------------------------
+const act = (fn) => async () => { try { await fn(); } catch (e) { addLog([`✖ ${e.message}`]); } };
+
+$('start').addEventListener('click', act(async () => {
+  clearTimeout(saveTimer);
+  status = (await api('/api/start', readForm())).status;
+  render();
+}));
+$('stop').addEventListener('click', act(async () => { status = (await api('/api/stop')).status; render(); }));
+$('open-data').addEventListener('click', act(() => api('/api/open-data')));
+$('reset').addEventListener('click', act(async () => {
+  if (!confirm('La próxima corrida va a recorrer de nuevo todas las búsquedas. Los avisos ya guardados no se borran. ¿Seguir?')) return;
+  status = (await api('/api/reset-exploration')).status;
+  render();
+}));
+$('shutdown').addEventListener('click', act(async () => {
+  if (status.state !== 'idle' && !confirm('Hay una corrida en curso. ¿Detenerla y cerrar el programa?')) return;
+  await api('/api/shutdown');
+  document.body.innerHTML = '<p style="padding:40px;text-align:center">El programa se cerró. Ya podés cerrar esta pestaña.</p>';
+}));
+
+// --- Arranque --------------------------------------------------------------------------------
+async function boot() {
+  const state = await (await fetch('/api/state')).json();
+  fillForm(state.settings, state.options);
+  $('data-dir').textContent = `Carpeta: ${state.dataDir}`;
+  logEl.textContent = '';
+  addLog(state.log);
+  status = state.status;
+  connected = true;
+  render();
+
+  const es = new EventSource('/api/events');
+  es.addEventListener('status', (e) => { connected = true; status = JSON.parse(e.data); render(); });
+  es.addEventListener('log', (e) => addLog([JSON.parse(e.data)]));
+  es.onopen = () => { connected = true; render(); };
+  es.onerror = () => { connected = false; render(); };
+}
+boot().catch(() => { connected = false; render(); });
+setInterval(render, 5000); // el ritmo por hora avanza aunque no lleguen eventos
+</script>
+</body>
+</html>
