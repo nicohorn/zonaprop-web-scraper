@@ -1,165 +1,158 @@
 # zonaprop-scraper
 
-Scraper de avisos de [ZonaProp](https://www.zonaprop.com.ar) (Node.js + Puppeteer) con interfaz
-web local. Arma un dataset de propiedades en JSONL y CSV.
+Scraper de avisos de [ZonaProp](https://www.zonaprop.com.ar) para la Ciudad de Buenos Aires, con
+interfaz web local y una sección de modelos de datos.
 
-## Uso
+- **Sólo CABA por defecto**: busca en `capital-federal` y descarta avisos de otras zonas.
+- **Scraper** Node.js + Puppeteer (Chrome real) que recorre listados y, opcionalmente, fichas.
+  Retoma donde quedó y parte las búsquedas grandes por rango de precio.
+- **Interfaz** en <http://localhost:3210>: parámetros, avance, registro y descarga de CSV.
+- **Modelos** en <http://localhost:3210/modelos>: seis análisis en Python (precio, oportunidades,
+  rentabilidad, segmentos, texto, supervivencia) con parámetros, barra de avance y resultados.
+- **Notebook** `notebooks/01_price_prediction.ipynb` con el modelo de precio paso a paso.
 
-Doble clic en `Iniciar ZonaProp Scraper.bat`. La primera vez instala lo que falte; después abre
-la interfaz en <http://localhost:3210>. Cerrar la ventana negra detiene todo.
+## Arquitectura
 
-Requiere Windows 10/11 y conexión residencial (Cloudflare bloquea IPs de datacenter y VPN).
-Conviene tener Google Chrome instalado.
+```mermaid
+flowchart LR
+  UI["ui/index.html<br/>Scraper"] -->|HTTP| S["src/server.js"]
+  UM["ui/modelos.html<br/>Modelos"] -->|HTTP, polling| S
+  CLI["npm run scrape<br/>src/scrape.js"] --> C
+  S --> C["src/crawler.js"]
+  C --> E["src/explore.js<br/>búsquedas + partición por precio"]
+  C --> K["src/caba.js<br/>filtro CABA"]
+  C --> ST["src/settings.js"]
+  C --> B["src/browser.js<br/>Chrome + Cloudflare"] --> ZP[(zonaprop.com.ar)]
+  C --> P["src/parse/*"]
+  C --> D[("data/*.jsonl<br/>frontier.json")]
+  S --> M["src/ml.js"] -->|spawn ml/.venv| R["ml/run.py"]
+  R --> Z["ml/zpml.py<br/>carga + variables"] --> D
+  R --> O[("data/ml/runs/&lt;id&gt;/")]
+  T["ml/tasks.json<br/>parámetros y defaults"] --> M & R
+```
 
-## Qué hace
-
-**1. Arma las búsquedas.** Una por cada combinación de operación × tipo × zona elegida en la
-interfaz. Sin tipo = todos; sin zona = todo el país.
-
-**2. Recorre los listados.** Abre cada búsqueda en Chrome, lee cuántos avisos declara y pagina
-guardando cada tarjeta. ZonaProp deja de paginar pasada la página ~500, así que una búsqueda
-que no entra en el tope configurado (300 páginas) se parte en dos rangos de precio, y así
-sucesivamente hasta que cada parte entra.
-
-**3. Visita las fichas** (opcional). Entra a cada aviso guardado y agrega descripción completa,
-amenities, antigüedad, orientación y todas las fotos.
-
-**4. Guarda sobre la marcha.** Cada aviso se escribe apenas se lee y se deduplica por `id`. Al
-detener y volver a iniciar retoma en la misma búsqueda y página.
-
-Mientras corre:
-
-- Espera entre 2 y 4,5 s entre páginas, con un solo navegador.
-- Si Cloudflare pide verificación, avisa en la interfaz y espera a que se tilde el casillero en
-  la ventana de Chrome.
-- Ante una verificación sin resolver, un navegador cerrado o internet caído, pausa y reintenta.
-- Evita que Windows suspenda la PC.
-- Saltea las zonas mal escritas (el sitio las redirige a otra búsqueda) y lo anota en el registro.
-
-Ritmo aproximado: una página de listado (30 avisos) o una ficha cada 5 s. Todo el país en venta
-son unas 20.000 páginas.
-
-## Qué guarda
-
-En `data/`:
-
-| Archivo | Contenido |
+| Pieza | Rol |
 | --- | --- |
-| `listings.jsonl` | un aviso por línea, tomado del listado |
-| `details.jsonl` | una ficha por línea |
-| `failures.jsonl` | búsquedas inválidas, páginas que no cargaron, avisos dados de baja |
-| `frontier.json` | avance de la exploración |
-| `settings.json` | parámetros elegidos en la interfaz |
-| `log.txt` | registro de todas las corridas |
+| `src/explore.js` | Arma las búsquedas (operación × tipo × zona) y las parte por precio cuando superan el tope de páginas. |
+| `src/crawler.js` | Orquesta fase 1 (listados) y fase 2 (fichas), pausas, reintentos y verificación de Cloudflare. |
+| `src/caba.js` | Barrios de CABA; filtro de URLs y de la `location` de cada aviso. |
+| `src/settings.js` | Parámetros saneados (`data/settings.json`); fuerza CABA si `soloCaba`. |
+| `src/server.js` | Servidor local (sólo 127.0.0.1): interfaz, API del scraper, CSV y API de modelos. |
+| `src/ml.js` | Lanza `ml/run.py` como proceso hijo (uno a la vez), lee el avance, permite cancelar. |
+| `ml/run.py`, `ml/zpml.py` | Entrenamientos A–F; carga, filtro CABA y variables compartidas con el notebook. |
+| `config.js` | Configuración técnica (puerto, navegador, tiempos). |
 
-Los CSV se descargan desde la interfaz o con `npm run csv`.
+## Requisitos e instalación
 
-**Avisos:** `id`, `posting_type` (`PROPERTY` o `DEVELOPMENT` = emprendimiento), `url`, `title`,
-`price_currency`, `price`, `expensas`, `superficie_total`, `superficie_cubierta`, `ambientes`,
-`dormitorios`, `banos`, `cocheras`, `address`, `location`, `description_short`, `publisher`,
-`date_posted`, `highlight`, `pills`, `photos`, `search_slug`, `tipo`, `operacion`, `zona`,
-`page`, `search_url`, `scraped_at`.
-
-**Fichas** (lo anterior más): `tipo_propiedad`, `status`, `reserved`, `posting_code`,
-`antiguedad`, `antiguedad_texto`, `disposicion`, `orientacion`, `luminosidad`, `toilettes`,
-`features_extra`, `address_locality`, `address_region`, `neighborhood`, `city`, `province`,
-`location_ids`, `amenities`, `amenities_flat`, `description`, `published_text`,
-`published_days`, `publisher_id`, `publisher_url`, `publisher_premium`.
-
-Para el análisis:
-
-- `price: null` = "Consultar precio". `expensas: null` = no informa (no es cero).
-- `price` está en la moneda de `price_currency` (USD o ARS), sin convertir.
-- No hay coordenadas: el sitio no las publica.
-- `published_days` es relativo a `scraped_at`.
-- Un aviso que aparece en varias búsquedas queda con la etiqueta de la primera que lo encontró.
-
-## Sólo CABA
-
-Por defecto `soloCaba: true` (`src/settings.js`, `src/caba.js`): la zona se fuerza a `capital-federal`, las URLs pegadas a mano sólo se aceptan si apuntan a CABA o a uno de sus barrios, y cada aviso se guarda sólo si su `location` termina en `Capital Federal` o en un barrio porteño (el sitio rellena con otras zonas). La fase de fichas también saltea avisos fuera de CABA ya guardados. Para volver a todo el país: `"soloCaba": false` en `data/settings.json`.
-
-## Modelos (CABA)
-
-Sección de la interfaz en <http://localhost:3210/modelos> (botón **Modelos** arriba). Entrena con lo que haya en `data/` y deja cada corrida en `data/ml/runs/<fecha>-<tarea>/` (params, result.json, CSV y gráficos).
-
-Instalación de Python (una vez; Python 3.11–3.13, por ejemplo el de Anaconda):
+- Windows 10/11, Google Chrome y conexión residencial (Cloudflare bloquea datacenters y VPN).
+- Node.js 22.12+: `npm install`.
+- Para Modelos y el notebook, Python 3.11–3.13 (por ejemplo, Anaconda):
 
 ```powershell
 python -m venv ml\.venv
 ml\.venv\Scripts\python.exe -m pip install -r ml\requirements.txt
 ```
 
-La interfaz usa `ml/.venv` sola (o la variable `ZP_PYTHON`). Cada modelo trae parámetros por defecto: elegir, **Entrenar** y mirar la barra de avance; **Cancelar** corta el proceso. Resultados (métricas, tablas, gráficos, CSV descargables) aparecen a la derecha; las corridas anteriores quedan listadas.
+La interfaz usa `ml\.venv` sola; otra instalación se indica con la variable `ZP_PYTHON`.
 
-| Modelo | Qué hace | Datos mínimos |
-| --- | --- | --- |
-| A · Precio | Ridge + LightGBM sobre log(precio) o USD/m²; métricas en USD, importancia, SHAP | 60 avisos del tipo elegido |
-| B · Oportunidades | residuos fuera de muestra + IsolationForest vs. mediana del barrio; ranking de baratos | 60 |
-| C · Renta vs. venta | alquiler (pesos → USD con el MEP indicado) / venta USD/m², por barrio | avisos de venta **y** alquiler |
-| D · Segmentos | k-means o HDBSCAN, perfil por segmento y PCA | 50 |
-| E · Texto | TF-IDF: términos que suben/bajan el USD/m² y mejora del modelo al sumar texto | 80 |
-| F · Supervivencia | Kaplan-Meier/Cox del tiempo hasta la baja; hoy avisa que faltan datos (requiere re-scrapes con historial y fichas) | 30 bajas |
+## Uso
 
-Notebook: `notebooks/01_price_prediction.ipynb` (kernel de `ml/.venv`; abrir con `ml\.venv\Scripts\jupyter lab`). Código común en `ml/zpml.py`, entrenamientos en `ml/run.py`, parámetros y defaults en `ml/tasks.json`, orquestación desde Node en `src/ml.js`.
+- **Interfaz**: doble clic en `Iniciar ZonaProp Scraper.bat` (instala lo que falte) o `npm start`.
+  Cerrar la ventana negra detiene todo.
+- **Por consola**: `npm run scrape` con los parámetros guardados. Flags: `--solo-listado`,
+  `--solo-detalle`, `--limite N` (tope de fichas), `--headless` (sólo después de una corrida con
+  ventana que haya pasado la verificación).
+- **Retomar**: el avance queda en `data/frontier.json` y cada aviso se escribe apenas se lee
+  (dedupe por `id`). Cortar con Ctrl+C o *Detener* es seguro; la próxima corrida sigue en la
+  misma búsqueda y página. *Volver a explorar desde cero* reinicia el recorrido sin borrar avisos.
+- **Una corrida a la vez**: no uses *Iniciar* en la interfaz mientras corre `npm run scrape`;
+  escribirían los mismos archivos.
+- **Ritmo**: una página (30 avisos) cada ~5 s, con pausas de 2–4,5 s y un solo navegador. Si
+  aparece la verificación de Cloudflare, hay que tildar el casillero en la ventana de Chrome.
+  No borres `.perfil-chrome/`.
+- **CSV**: botones de la interfaz o `npm run csv`.
+- **Tests**: `npm test` (parsers contra capturas reales, exploración, CABA y cableado de
+  modelos; corre un entrenamiento sintético si existe `ml\.venv`).
+- **Diagnóstico**: `node scripts/inspect.js <url>` guarda HTML y captura en `debug/`.
 
-## Historial de cambios
+## Sólo CABA
 
-Opción de la interfaz, apagada por defecto. Sin ella, un aviso ya guardado no se vuelve a
-escribir. Con ella, si reaparece con otro precio, expensas, superficie o ambientes se agrega una
-línea nueva con `changed_fields`. *Descargar avisos* trae la última versión de cada uno;
-*Descargar historial*, todas. Sólo se detecta al volver a recorrer una búsqueda (*Volver a
-explorar desde cero*), y las fichas ya visitadas no se actualizan.
+Activo por defecto (`soloCaba: true` en `src/settings.js`):
 
-## Límites
+1. **En origen**: la única zona buscada es `capital-federal`; las URLs pegadas a mano sólo se
+   aceptan si apuntan a CABA o a un barrio porteño.
+2. **Filtro de seguridad**: ZonaProp rellena búsquedas chicas con otras zonas, así que cada aviso
+   se guarda sólo si su `location` termina en *Capital Federal* o en un barrio de CABA
+   (`Palermo, Capital Federal`, `Las Cañitas, Palermo`). Los descartes quedan en el registro.
+3. La fase de fichas saltea avisos fuera de CABA ya guardados.
 
-- Quedan afuera los avisos sin precio de las búsquedas que hubo que partir (~0,4%).
-- Los avisos dados de baja no se borran del dataset.
-- Una búsqueda con menos de 30 resultados viene rellenada con avisos de otras zonas, que se
-  guardan igual.
-- Es scraping de páginas públicas a ritmo humano con fines académicos. Antes de correrlo revisá
-  <https://www.zonaprop.com.ar/robots.txt> y los términos de uso; no lo aceleres ni lo
-  paralelices.
-- `description` y `publisher` pueden traer datos de particulares: anonimizá antes de publicar.
+Para volver a todo el país: `"soloCaba": false` en `data/settings.json` (la interfaz todavía no
+tiene ese interruptor; con `soloCaba` activo el campo de zonas se ignora).
 
-## Por consola
+## Modelos
 
-Requiere Node 22.12+.
+En <http://localhost:3210/modelos>: elegir modelo, ajustar parámetros (todos tienen default),
+**Entrenar**, seguir la barra de avance; **Cancelar** corta el proceso. Resultados (métricas,
+tablas, gráficos, CSV) a la derecha; cada corrida queda en `data/ml/runs/<fecha>-<tarea>/`.
 
-```bash
-npm install
-npm start                       # la interfaz (igual que el .bat)
-npm run scrape                  # corrida sin interfaz, con los parámetros guardados
-npm run csv                     # exporta data/*.jsonl a CSV
-npm test                        # parsers contra capturas reales + lógica de exploración
-node scripts/inspect.js <url>   # diagnóstico de una URL: HTML y captura en debug/
-```
+| | Pregunta | Cuándo usarlo | Datos mínimos |
+| --- | --- | --- | --- |
+| **A · Precio** | ¿Cuánto debería valer este aviso? | Primero: estima precio justo / USD/m² (Ridge + LightGBM, SHAP). | 60 avisos del tipo elegido |
+| **B · Oportunidades** | ¿Qué avisos parecen baratos o raros? | Después de A: gangas y errores de carga (residuos + IsolationForest por barrio). | 60 |
+| **C · Renta vs. venta** | ¿Dónde conviene más alquilar respecto del precio de compra? | Cuando haya alquileres; por barrio. | venta y alquiler por barrio (10) |
+| **D · Segmentos** | ¿Qué tipos de propiedades hay? | Para explorar submercados (k-means / HDBSCAN). | 50 |
+| **E · Texto** | ¿Qué palabras del aviso mueven el precio? | Con descripciones (mejor con fichas). | 80 |
+| **F · Tiempo hasta baja** | ¿Cuánto tarda un aviso en desaparecer? | Más adelante: requiere re-scrapes con historial de cambios. | 30 bajas |
 
-Flags de `scrape`: `--solo-listado`, `--solo-detalle`, `--limite N` (tope de fichas),
-`--headless` (sin ventana; sólo después de una corrida con ventana que haya pasado la
-verificación).
+Defaults: venta, USD, departamentos, test 20 %. **El dólar MEP por defecto (1450) es fijo:
+actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus rangos están en
+`ml/tasks.json`.
 
-## Código
+## Notebook
 
-```
-Iniciar ZonaProp Scraper.bat   lanzador
-config.js              configuración técnica (puerto, navegador, tiempos de espera)
-ui/index.html          interfaz
-src/server.js          servidor local y descarga de CSV
-src/crawler.js         orquestación de la corrida, pausas y reintentos
-src/explore.js         búsquedas de partida y partición por precio
-src/browser.js         navegador y espera de la verificación
-src/parse/             lectura de tarjetas y fichas
-src/changes.js         detección de cambios para el historial
-src/storage.js         archivos JSONL
-src/export.js          JSONL a CSV
-test/                  tests
-```
+`notebooks/01_price_prediction.ipynb`: carga CABA, filtra venta en USD, arma variables, entrena
+Ridge y LightGBM, métricas, gráficos, SHAP y residuos por barrio. Usa `ml/zpml.py`, así que da lo
+mismo que la interfaz. Abrir con `ml\.venv\Scripts\jupyter lab`.
 
-## Si falla
+## Datos
 
-1. Mirá `data/log.txt`.
-2. `npm test`: si falla, cambió el sitio y hay que ajustar `src/parse/`.
-3. `node scripts/inspect.js <url>` y revisá `debug/`: una página de Cloudflare se resuelve
-   corriendo con ventana; una página real sin tarjetas indica que cambiaron los selectores.
-4. Si la verificación salta en cada página: subí la pausa, destildá "No cargar imágenes" y no
-   borres `.perfil-chrome/`.
+Todo en `data/` (no se sube al repo, está en `.gitignore`):
+
+| Archivo | Contenido |
+| --- | --- |
+| `listings.jsonl` | un aviso por línea, tomado del listado |
+| `details.jsonl` | una ficha por línea (fase 2) |
+| `failures.jsonl` | búsquedas inválidas, páginas que no cargaron, avisos dados de baja |
+| `frontier.json` | avance de la exploración |
+| `settings.json` | parámetros de la interfaz |
+| `ml/runs/` | corridas de modelos |
+| `archive/nationwide-20261015/` | dataset nacional anterior (archivado) |
+
+**Avisos**: `id`, `posting_type`, `url`, `title`, `price_currency`, `price`, `expensas`,
+`superficie_total`, `superficie_cubierta`, `ambientes`, `dormitorios`, `banos`, `cocheras`,
+`address`, `location`, `description_short`, `publisher`, `date_posted`, `highlight`, `pills`,
+`photos`, `search_slug`, `tipo`, `operacion`, `zona`, `page`, `search_url`, `scraped_at`.
+
+**Fichas** agregan: `tipo_propiedad`, `status`, `reserved`, `antiguedad`, `disposicion`,
+`orientacion`, `luminosidad`, `toilettes`, `amenities`, `description`, `published_days`,
+`neighborhood`, `city`, `province`, `location_ids`, datos del anunciante.
+
+Al analizar: `price: null` = "Consultar precio"; `expensas: null` = no informa; `price` está en
+su moneda (USD o ARS) sin convertir; no hay coordenadas. El tipo de propiedad se deduce del
+código de la URL (`ml/zpml.py`).
+
+## Límites y pendientes
+
+- La paginación se corta pasada la página ~500; las búsquedas se parten por precio y quedan
+  afuera los avisos sin precio de las partidas (~0,4 %).
+- Los avisos dados de baja no se borran; `description`/`publisher` pueden tener datos personales.
+- Es scraping a ritmo humano con fines académicos: revisá `robots.txt` y los términos de uso; no
+  lo aceleres ni lo paralelices.
+
+Pendiente:
+
+- Correr la fase de fichas sobre CABA (antigüedad, amenities, descripción completa).
+- Re-scrapes con *historial de cambios* para el modelo F.
+- Interruptor de *Sólo CABA* en la interfaz.
+- Guardar los modelos entrenados para reutilizarlos.
+- Dólar MEP en vivo en lugar del valor fijo.
