@@ -3,3 +3,9 @@ node_modules/
 .runtime/
 data/
 debug/
+
+ml/.venv/
+ml/pip-install.log
+
+__pycache__/
+*.pyc

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZonaProp · Modelos</title>
+<style>
+  :root { --bg:#f5f6f8; --panel:#fff; --ink:#1c2330; --muted:#667085; --line:#e2e5ea; --accent:#e8590c; --accent-ink:#fff; --ok:#1a7f4b; --err:#c0392b; --chip:#eef0f4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151a; --panel:#1b2027; --ink:#e6e9ee; --muted:#98a2b3; --line:#2c333d; --chip:#262d37; --ok:#4cc38a; --err:#ff7b6b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 24px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  header a { color:var(--accent); font-weight:600; text-decoration:none; }
+  main { display:grid; grid-template-columns:minmax(320px,420px) 1fr; gap:20px; padding:20px 24px; max-width:1500px; margin:0 auto; align-items:start; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  section + section { margin-top:20px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 12px; }
+  .tabs { display:flex; flex-direction:column; gap:6px; }
+  .tab { text-align:left; background:var(--chip); border:1px solid transparent; border-radius:8px; padding:9px 12px; cursor:pointer; font:inherit; color:var(--ink); }
+  .tab[aria-selected=true] { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); font-weight:600; }
+  label.f { display:block; font-weight:600; font-size:13px; margin:12px 0 4px; }
+  input, select { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:inherit; }
+  input[type=checkbox] { width:auto; }
+  .chk { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:14px; }
+  .multi { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:13px; }
+  .multi label { display:flex; gap:4px; align-items:center; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+  .btn { font:inherit; font-weight:600; border-radius:8px; padding:9px 18px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .controls { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  .hint { color:var(--muted); font-size:13px; }
+  .bar { height:12px; background:var(--chip); border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .4s; }
+  .err { color:var(--err); white-space:pre-wrap; font-size:13px; }
+  .ok { color:var(--ok); }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:8px 0 18px; }
+  th, td { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .tablewrap { overflow:auto; max-height:520px; }
+  img.art { max-width:100%; border:1px solid var(--line); border-radius:8px; margin:6px 0 14px; background:#fff; }
+  .runs { font-size:13px; max-height:260px; overflow:auto; }
+  .runs a { cursor:pointer; color:var(--accent); }
+  pre.log { background:#12161d; color:#cfd6e1; padding:10px; border-radius:8px; font-size:12px; max-height:200px; overflow:auto; white-space:pre-wrap; }
+  .files a { margin-right:12px; font-size:13px; color:var(--accent); }
+  .tab small { display:block; font-weight:400; color:var(--muted); font-size:12px; }
+  .guide summary { font-weight:600; cursor:pointer; }
+  .guide table { margin:8px 0; } .guide ol { margin:8px 0 0; padding-left:20px; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ZonaProp · Modelos (CABA)</h1>
+  <span id="py" class="hint"></span>
+  <a href="/">← Scraper</a>
+</header>
+<main>
+  <div>
+    <section class="guide">
+      <details open>
+        <summary>¿Qué responde cada modelo?</summary>
+        <table>
+          <tr><th>A · Precio</th><td>¿Cuánto debería valer este aviso? <span class="hint">Para estimar precio justo / USD/m².</span></td></tr>
+          <tr><th>B · Oportunidades</th><td>¿Qué avisos parecen baratos o raros? <span class="hint">Para encontrar posibles gangas y errores de datos.</span></td></tr>
+          <tr><th>C · Renta vs. venta</th><td>¿Dónde conviene más alquilar respecto del precio de compra? <span class="hint">Por barrio, con el dólar MEP actualizado.</span></td></tr>
+          <tr><th>D · Segmentos</th><td>¿Qué tipos de propiedades hay? <span class="hint">Para estudiar submercados.</span></td></tr>
+          <tr><th>E · Texto</th><td>¿Qué palabras del aviso mueven el precio? <span class="hint">Para ver señales en las descripciones.</span></td></tr>
+          <tr><th>F · Tiempo hasta baja</th><td>¿Cuánto tarda un aviso en desaparecer? <span class="hint">Requiere re-scrapes con seguimiento de cambios.</span></td></tr>
+        </table>
+        <b>¿Cuál uso?</b>
+        <ol>
+          <li>Empezá por <b>A</b>: te dice si el modelo de precio es confiable.</li>
+          <li>Después <b>B</b>: usa la misma lógica para marcar gangas y errores.</li>
+          <li><b>C</b> cuando ya haya avisos de alquiler (y con el MEP del día).</li>
+          <li><b>D</b> para explorar el mercado sin una pregunta puntual.</li>
+          <li><b>E</b> cuando haya descripciones (mejor con fichas visitadas).</li>
+          <li><b>F</b> más adelante, tras varias pasadas con historial de cambios.</li>
+        </ol>
+      </details>
+    </section>
+    <section>
+      <h2>Modelo</h2>
+      <div class="tabs" id="tabs"></div>
+    </section>
+    <section>
+      <h2 id="ptitle">Parámetros</h2>
+      <p class="hint" id="pdesc"></p>
+      <form id="form"></form>
+      <div class="controls">
+        <button class="btn primary" id="run">Entrenar</button>
+        <button class="btn" id="cancel" disabled>Cancelar</button>
+        <button class="btn" id="defaults">Valores por defecto</button>
+      </div>
+      <div id="prog" hidden>
+        <div class="bar"><div id="barfill"></div></div>
+        <div id="step" class="hint"></div>
+      </div>
+      <div id="lastmsg"></div>
+    </section>
+    <section>
+      <h2>Corridas anteriores</h2>
+      <div class="runs" id="runs"></div>
+    </section>
+  </div>
+  <section id="result">
+    <h2>Resultado</h2>
+    <p class="hint">Elegí un modelo y tocá <b>Entrenar</b>, o abrí una corrida anterior. Los datos salen de <code>data/listings.jsonl</code> (y <code>details.jsonl</code> si visitaste fichas); los resultados quedan en <code>data/ml/runs/</code>.</p>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+let state = null, current = 'price', shownRun = null, wasRunning = false;
+const saved = JSON.parse(localStorage.getItem('mlParams') || '{}');
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function renderTabs() {
+  $('#tabs').innerHTML = Object.entries(state.tasks).map(([k, t]) => `<button class="tab" data-k="${k}" aria-selected="${k === current}">${esc(t.label)}${t.question ? `<small>${esc(t.question)}</small>` : ''}</button>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach((b) => b.onclick = () => { current = b.dataset.k; renderTabs(); renderForm(); });
+}
+
+function renderForm(useDefaults = false) {
+  const t = state.tasks[current];
+  $('#ptitle').textContent = t.label;
+  $('#pdesc').innerHTML = (t.question ? `<b>${esc(t.question)}</b> ${esc(t.use || '')}<br>` : '') + esc(t.desc);
+  const vals = useDefaults ? {} : (saved[current] || {});
+  const html = Object.entries(t.params).map(([k, s]) => {
+    const v = vals[k] ?? s.default;
+    if (s.type === 'bool') return `<label class="chk"><input type="checkbox" name="${k}" ${v ? 'checked' : ''}> ${esc(s.label)}</label>`;
+    if (s.type === 'select') return `<label class="f">${esc(s.label)}</label><select name="${k}">${s.options.map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    if (s.type === 'multi') return `<label class="f">${esc(s.label)}</label><div class="multi">${s.options.map((o) => `<label><input type="checkbox" name="${k}" value="${o}" ${v.includes(o) ? 'checked' : ''}>${esc(o)}</label>`).join('')}</div>`;
+    if (s.type === 'date') return `<label class="f">${esc(s.label)}</label><input type="date" name="${k}" value="${esc(v)}">`;
+    return `<label class="f">${esc(s.label)}</label><input type="number" name="${k}" value="${v}" min="${s.min ?? ''}" max="${s.max ?? ''}" step="${s.step ?? 'any'}">`;
+  }).join('');
+  $('#form').innerHTML = html;
+}
+
+function readForm() {
+  const t = state.tasks[current], out = {};
+  for (const [k, s] of Object.entries(t.params)) {
+    const els = [...$('#form').querySelectorAll(`[name="${k}"]`)];
+    if (s.type === 'bool') out[k] = els[0].checked;
+    else if (s.type === 'multi') out[k] = els.filter((e) => e.checked).map((e) => e.value);
+    else if (s.type === 'number') out[k] = els[0].value === '' ? s.default : Number(els[0].value);
+    else out[k] = els[0].value;
+  }
+  return out;
+}
+
+function fmt(v) {
+  if (typeof v !== 'number') return esc(v);
+  const a = Math.abs(v);
+  return a >= 1000 ? Math.round(v).toLocaleString('es-AR') : v.toLocaleString('es-AR', { maximumFractionDigits: a < 1 ? 4 : 2 });
+}
+function tableHtml(t) {
+  return `<div class="tablewrap"><table><thead><tr>${t.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.rows.map((r) => `<tr>${r.map((v, i) => {
+    if (typeof v === 'string' && v.startsWith('http')) return `<td><a href="${esc(v)}" target="_blank" rel="noopener">abrir</a></td>`;
+    return `<td class="${typeof v === 'number' ? 'n' : ''}">${fmt(v)}</td>`;
+  }).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+async function showRun(id) {
+  shownRun = id;
+  const { result, params } = await api(`/api/ml/run?id=${encodeURIComponent(id)}`);
+  const r = result || {};
+  let h = `<h2>Resultado · ${esc(id)}</h2>`;
+  if (!result) h += '<p class="hint">Sin result.json (cancelada o en curso).</p>';
+  else if (r.status !== 'ok') h += `<p class="err">${esc(r.error)}</p>`;
+  else h += `<p class="ok">OK en ${r.seconds}s</p>`;
+  const skip = new Set(['task', 'params', 'started_at', 'status', 'error', 'traceback', 'seconds', 'artifacts', 'metricas', 'tablas']);
+  const info = Object.entries(r).filter(([k]) => !skip.has(k));
+  if (info.length) h += `<table>${info.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? fmt(v) : v)}</td></tr>`).join('')}</table>`;
+  if (r.metricas) {
+    const models = Object.keys(r.metricas), cols = [...new Set(models.flatMap((m) => Object.keys(r.metricas[m])))];
+    h += '<h2>Métricas</h2>' + tableHtml({ columns: ['modelo', ...cols], rows: models.map((m) => [m, ...cols.map((c) => r.metricas[m][c] ?? null)]) });
+  }
+  for (const a of (r.artifacts || []).filter((a) => a.endsWith('.png'))) h += `<img class="art" src="/api/ml/file?id=${encodeURIComponent(id)}&name=${encodeURIComponent(a)}" alt="${esc(a)}">`;
+  for (const [name, t] of Object.entries(r.tablas || {})) if (t) h += `<h2>${esc(name)}</h2>` + tableHtml(t);
+  const files = (r.artifacts || []).filter((a) => !a.endsWith('.png'));
+  if (files.length) h += `<h2>Archivos</h2><div class="files">${files.map((a) => `<a href="/api/ml/file?id=${encodeURIComponent(id)}&name=${encodeURIComponent(a)}">${esc(a)}</a>`).join('')}</div>`;
+  h += `<details><summary class="hint">Parámetros</summary><pre class="log">${esc(JSON.stringify(params, null, 1))}</pre></details>`;
+  if (r.traceback) h += `<details><summary class="hint">Traceback</summary><pre class="log">${esc(r.traceback)}</pre></details>`;
+  $('#result').innerHTML = h;
+}
+
+function renderStatus() {
+  const s = state, j = s.job;
+  const py = s.python;
+  $('#py').innerHTML = py.ok ? `Python ${esc(py.version)} · ${esc(py.modules.join(', '))}` : `<span class="err">Python no disponible: instalá ml/requirements.txt (ver README)</span>`;
+  $('#run').disabled = s.running || !py.ok;
+  $('#cancel').disabled = !s.running;
+  $('#prog').hidden = !j;
+  if (j) {
+    $('#barfill').style.width = `${j.pct}%`;
+    $('#step').textContent = `${s.tasks[j.task].label}: ${j.pct}% · ${j.step}`;
+  }
+  if (!s.running && s.last) {
+    $('#lastmsg').innerHTML = s.last.status === 'ok' ? `<p class="ok">Última corrida OK (${esc(s.last.id)})</p>` : `<p class="err">Última corrida: ${esc(s.last.status)} — ${esc(s.last.error || '')}</p>`;
+  }
+  $('#runs').innerHTML = s.runs.length ? s.runs.map((r) => `<div><a data-id="${esc(r.id)}">${esc(r.id)}</a> <span class="hint">${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</span></div>`).join('') : '<p class="hint">Todavía no hay corridas.</p>';
+  $('#runs').querySelectorAll('a').forEach((a) => a.onclick = () => showRun(a.dataset.id));
+  if (wasRunning && !s.running && s.last) showRun(s.last.id);
+  wasRunning = s.running;
+}
+
+async function refresh() {
+  try { state = await api('/api/ml/state'); renderStatus(); } catch { $('#py').textContent = 'Sin conexión con el servidor'; }
+  setTimeout(refresh, state?.running ? 800 : 3000);
+}
+
+$('#run').onclick = async () => {
+  const params = readForm();
+  saved[current] = params; localStorage.setItem('mlParams', JSON.stringify(saved));
+  $('#lastmsg').innerHTML = '';
+  try { await api('/api/ml/start', { task: current, params }); state = await api('/api/ml/state'); renderStatus(); } catch (e) { $('#lastmsg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+};
+$('#cancel').onclick = () => api('/api/ml/cancel', {});
+$('#defaults').onclick = () => { delete saved[current]; localStorage.setItem('mlParams', JSON.stringify(saved)); renderForm(true); };
+
+(async () => {
+  state = await api('/api/ml/state');
+  renderTabs(); renderForm(); renderStatus();
+  if (state.runs[0]) showRun(state.runs[0].id);
+  setTimeout(refresh, 1000);
+})();
+</script>
+</body>
+</html>

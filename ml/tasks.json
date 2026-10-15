@@ -1,0 +1,387 @@
+{
+  "price": {
+    "label": "A · Predicción de precio",
+    "desc": "Ridge (baseline) + LightGBM. Métricas en USD sobre un test separado, importancia de variables y SHAP.",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "currency": {
+        "type": "select",
+        "options": [
+          "USD",
+          "ARS",
+          "convertir_a_USD"
+        ],
+        "default": "USD",
+        "label": "Moneda (convertir usa el dólar MEP)"
+      },
+      "fx_mep": {
+        "type": "number",
+        "min": 1,
+        "max": 100000,
+        "default": 1450,
+        "label": "Dólar MEP (ARS por USD)"
+      },
+      "tipo": {
+        "type": "select",
+        "options": [
+          "todos",
+          "departamento",
+          "casa",
+          "ph",
+          "terreno",
+          "local",
+          "oficina",
+          "cochera"
+        ],
+        "default": "departamento",
+        "label": "Tipo"
+      },
+      "target": {
+        "type": "select",
+        "options": [
+          "log_price",
+          "usd_m2"
+        ],
+        "default": "log_price",
+        "label": "Objetivo"
+      },
+      "test_size": {
+        "type": "number",
+        "min": 0.05,
+        "max": 0.5,
+        "step": 0.05,
+        "default": 0.2,
+        "label": "Proporción de test"
+      },
+      "learning_rate": {
+        "type": "number",
+        "min": 0.005,
+        "max": 0.5,
+        "step": 0.005,
+        "default": 0.05,
+        "label": "Learning rate"
+      },
+      "n_estimators": {
+        "type": "number",
+        "min": 50,
+        "max": 5000,
+        "step": 50,
+        "default": 800,
+        "label": "Árboles (n_estimators)"
+      },
+      "max_depth": {
+        "type": "number",
+        "min": -1,
+        "max": 32,
+        "step": 1,
+        "default": -1,
+        "label": "Profundidad máx. (-1 = libre)"
+      },
+      "num_leaves": {
+        "type": "number",
+        "min": 4,
+        "max": 512,
+        "step": 1,
+        "default": 63,
+        "label": "Hojas (num_leaves)"
+      },
+      "ridge_alpha": {
+        "type": "number",
+        "min": 0.001,
+        "max": 1000,
+        "default": 1.0,
+        "label": "Ridge alpha"
+      },
+      "use_text": {
+        "type": "bool",
+        "default": false,
+        "label": "Agregar variables de texto (TF-IDF + SVD)"
+      },
+      "shap": {
+        "type": "bool",
+        "default": true,
+        "label": "Calcular SHAP"
+      }
+    },
+    "question": "¿Cuánto debería valer este aviso?",
+    "use": "Para estimar precio justo / USD/m²."
+  },
+  "anomaly": {
+    "label": "B · Oportunidades / anomalías",
+    "desc": "Residuos fuera de muestra (LightGBM, 5 folds) + IsolationForest sobre USD/m² relativo al barrio.",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "tipo": {
+        "type": "select",
+        "options": [
+          "todos",
+          "departamento",
+          "casa",
+          "ph"
+        ],
+        "default": "departamento",
+        "label": "Tipo"
+      },
+      "contamination": {
+        "type": "number",
+        "min": 0.001,
+        "max": 0.3,
+        "step": 0.005,
+        "default": 0.03,
+        "label": "Contaminación (IsolationForest)"
+      },
+      "min_barrio": {
+        "type": "number",
+        "min": 3,
+        "max": 500,
+        "step": 1,
+        "default": 15,
+        "label": "Mínimo de avisos por barrio"
+      },
+      "n_folds": {
+        "type": "number",
+        "min": 2,
+        "max": 10,
+        "step": 1,
+        "default": 5,
+        "label": "Folds para residuos"
+      },
+      "top_n": {
+        "type": "number",
+        "min": 10,
+        "max": 1000,
+        "step": 10,
+        "default": 50,
+        "label": "Cuántos mostrar"
+      }
+    },
+    "question": "¿Qué avisos parecen baratos o raros?",
+    "use": "Para encontrar posibles gangas y errores de datos."
+  },
+  "yields": {
+    "label": "C · Renta vs. venta por barrio",
+    "desc": "Mediana de alquiler/m² (convertido a USD) contra mediana de venta USD/m², rentabilidad bruta anual.",
+    "params": {
+      "fx_mep": {
+        "type": "number",
+        "min": 1,
+        "max": 100000,
+        "default": 1450,
+        "label": "Dólar MEP (ARS por USD)"
+      },
+      "as_of": {
+        "type": "date",
+        "default": "",
+        "label": "Fecha de corte (vacío = hoy; usa avisos vistos hasta esa fecha)"
+      },
+      "tipo": {
+        "type": "select",
+        "options": [
+          "todos",
+          "departamento",
+          "casa",
+          "ph"
+        ],
+        "default": "departamento",
+        "label": "Tipo"
+      },
+      "include_expensas": {
+        "type": "bool",
+        "default": false,
+        "label": "Restar expensas del alquiler"
+      },
+      "min_n": {
+        "type": "number",
+        "min": 3,
+        "max": 500,
+        "step": 1,
+        "default": 10,
+        "label": "Mínimo de avisos por barrio y operación"
+      }
+    },
+    "question": "¿Dónde conviene más alquilar respecto del precio de compra?",
+    "use": "Por barrio, con el dólar MEP actualizado."
+  },
+  "segments": {
+    "label": "D · Segmentos de mercado",
+    "desc": "K-means o HDBSCAN sobre variables estandarizadas; perfil de cada segmento y mapa PCA.",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "method": {
+        "type": "select",
+        "options": [
+          "kmeans",
+          "hdbscan"
+        ],
+        "default": "kmeans",
+        "label": "Método"
+      },
+      "k": {
+        "type": "number",
+        "min": 2,
+        "max": 30,
+        "step": 1,
+        "default": 6,
+        "label": "k (k-means)"
+      },
+      "min_cluster_size": {
+        "type": "number",
+        "min": 5,
+        "max": 2000,
+        "step": 5,
+        "default": 40,
+        "label": "min_cluster_size (HDBSCAN)"
+      },
+      "features": {
+        "type": "multi",
+        "options": [
+          "usd_m2",
+          "superficie",
+          "ambientes",
+          "banos",
+          "cocheras",
+          "antiguedad",
+          "expensas_m2",
+          "amenities_count",
+          "fotos"
+        ],
+        "default": [
+          "usd_m2",
+          "superficie",
+          "ambientes",
+          "banos",
+          "expensas_m2",
+          "amenities_count"
+        ],
+        "label": "Variables"
+      }
+    },
+    "question": "¿Qué tipos de propiedades hay?",
+    "use": "Para estudiar submercados."
+  },
+  "text": {
+    "label": "E · Variables de texto",
+    "desc": "TF-IDF de la descripción: términos que suben/bajan el precio y cuánto mejora LightGBM al sumar el texto (SVD).",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "tipo": {
+        "type": "select",
+        "options": [
+          "todos",
+          "departamento",
+          "casa",
+          "ph"
+        ],
+        "default": "departamento",
+        "label": "Tipo"
+      },
+      "max_features": {
+        "type": "number",
+        "min": 500,
+        "max": 50000,
+        "step": 500,
+        "default": 5000,
+        "label": "Máx. términos"
+      },
+      "ngram_max": {
+        "type": "number",
+        "min": 1,
+        "max": 3,
+        "step": 1,
+        "default": 2,
+        "label": "n-gramas hasta"
+      },
+      "min_df": {
+        "type": "number",
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "default": 5,
+        "label": "min_df"
+      },
+      "svd_components": {
+        "type": "number",
+        "min": 5,
+        "max": 300,
+        "step": 5,
+        "default": 50,
+        "label": "Componentes SVD"
+      },
+      "test_size": {
+        "type": "number",
+        "min": 0.05,
+        "max": 0.5,
+        "step": 0.05,
+        "default": 0.2,
+        "label": "Proporción de test"
+      }
+    },
+    "question": "¿Qué palabras del aviso mueven el precio?",
+    "use": "Para ver señales en las descripciones."
+  },
+  "survival": {
+    "label": "F · Tiempo hasta la baja (supervivencia)",
+    "desc": "Kaplan-Meier por barrio y Cox. Necesita varias pasadas con historial de cambios y fichas dadas de baja; si no hay datos suficientes lo informa.",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "min_events": {
+        "type": "number",
+        "min": 5,
+        "max": 10000,
+        "step": 5,
+        "default": 30,
+        "label": "Mínimo de bajas observadas"
+      },
+      "top_barrios": {
+        "type": "number",
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "default": 6,
+        "label": "Barrios en el gráfico"
+      }
+    },
+    "question": "¿Cuánto tarda un aviso en desaparecer?",
+    "use": "Requiere re-scrapes con seguimiento de cambios."
+  }
+}

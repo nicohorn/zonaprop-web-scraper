@@ -20,6 +20,7 @@ import { JsonlStore, readJsonl, readJson, writeJson, saveDebugHtml } from './sto
 import { buildRoots, splitNode, nodeSlug, nodeUrl, totalPages, PAGE_SIZE } from './explore.js';
 import { sanitizeSettings } from './settings.js';
 import { keepAwake } from './keepawake.js';
+import { isCabaLocation } from './caba.js';
 import { fingerprint, changedFields } from './changes.js';
 
 const DETAIL_SELECTOR = '#longDescription, .price-value, h1';
@@ -36,7 +37,7 @@ export class Crawler extends EventEmitter {
     super();
     // De cada aviso del listado sólo se recuerda si tiene ficha visitable (p) y la huella de su
     // última versión (h), para detectar cambios. Con historial, un id puede tener varias líneas.
-    this.listings = new JsonlStore(out(config.out.listings), { pick: (o) => ({ p: isProperty(o.url), h: fingerprint(o) }) });
+    this.listings = new JsonlStore(out(config.out.listings), { pick: (o) => ({ p: isProperty(o.url), c: isCabaLocation(o.location), h: fingerprint(o) }) });
     this.details = new JsonlStore(out(config.out.details));
     this.failures = new JsonlStore(out(config.out.failures), { key: 'key' });
     this.frontierPath = out(config.out.frontier);
@@ -280,7 +281,12 @@ export class Crawler extends EventEmitter {
       if (parsed.total_results != null) total = st.total = parsed.total_results;
       this.run_.current = { slug, page, pages: total ? Math.min(maxPages, totalPages(total)) : null, total };
 
-      const items = settings.includeDevelopments ? parsed.items : parsed.items.filter((i) => i.posting_type !== 'DEVELOPMENT');
+      let items = settings.includeDevelopments ? parsed.items : parsed.items.filter((i) => i.posting_type !== 'DEVELOPMENT');
+      if (settings.soloCaba) {
+        const before = items.length;
+        items = items.filter((i) => isCabaLocation(i.location));
+        if (items.length < before) this.log(`  p${page}: descarto ${before - items.length} avisos fuera de CABA.`);
+      }
       let nuevos = 0;
       let cambios = 0;
       for (const it of items) {
@@ -363,6 +369,7 @@ export class Crawler extends EventEmitter {
     const chunk = [];
     for await (const l of readJsonl(this.listings.path)) {
       if (!this.detailPending(l.id, l.url, skip)) continue;
+      if (this.settings.soloCaba && !isCabaLocation(l.location)) continue;
       chunk.push(l);
       skip.add(l.id); // una línea repetida no entra dos veces
       if (chunk.length >= DETAIL_CHUNK) break;
@@ -375,7 +382,7 @@ export class Crawler extends EventEmitter {
     const limit = this.settings.maxDetailsPerRun ?? Infinity;
     const skip = new Set(); // fichas que fallaron al cargar en esta corrida: se reintentan en la próxima
     let pending = 0;
-    for (const [id, saved] of this.listings.entries()) if (saved.p && !this.details.has(id) && !this.failures.has(`detail:${id}`)) pending++;
+    for (const [id, saved] of this.listings.entries()) if (saved.p && (!this.settings.soloCaba || saved.c) && !this.details.has(id) && !this.failures.has(`detail:${id}`)) pending++;
     this.run_.phase = 'fichas';
     this.run_.detailsPending = pending;
     this.log(`\nFase 2: ${pending.toLocaleString('es-AR')} fichas pendientes${limit < pending ? `, visito ${limit} en esta corrida` : ''} (ya guardadas: ${this.details.size.toLocaleString('es-AR')}).`);

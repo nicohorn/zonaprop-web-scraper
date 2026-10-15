@@ -15,6 +15,9 @@ import { Crawler } from './crawler.js';
 import { exportCsv } from './export.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { OPERACIONES, TIPOS, ZONAS_SUGERIDAS } from './explore.js';
+import { MlRunner, TASKS as ML_TASKS } from './ml.js';
+
+const ml = new MlRunner();
 
 // Las rutas de config.js (data/, .perfil-chrome/) son relativas a la carpeta del proyecto.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -95,6 +98,7 @@ async function sendCsv(res, file, name, opts) {
 }
 
 async function shutdown() {
+  ml.cancel();
   crawler.stop();
   while (crawler.running) await new Promise((r) => setTimeout(r, 200));
   process.exit(0);
@@ -142,6 +146,33 @@ const routes = {
     try { spawn(cmd, [dir], { stdio: 'ignore', detached: true }).on('error', () => {}).unref(); } catch { /* nada */ }
     json(res, 200, { dir });
   },
+  // --- Modelos (ui/modelos.html, src/ml.js) ---
+  'GET /modelos': (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(readFileSync(join(ROOT, 'ui', 'modelos.html')));
+  },
+  'GET /api/ml/state': (req, res) => json(res, 200, { tasks: ML_TASKS, python: ml.pythonInfo(), ...ml.status(), runs: ml.listRuns() }),
+  'GET /api/ml/run': (req, res) => {
+    const run = ml.getRun(new URL(req.url, URL_).searchParams.get('id') || '');
+    return run ? json(res, 200, run) : json(res, 404, { error: 'No existe esa corrida.' });
+  },
+  'GET /api/ml/file': (req, res) => {
+    const q = new URL(req.url, URL_).searchParams;
+    const p = ml.artifactPath(q.get('id') || '', q.get('name') || '');
+    if (!p) return json(res, 404, { error: 'No existe.' });
+    const type = p.endsWith('.png') ? 'image/png' : p.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/plain; charset=utf-8';
+    const headers = { 'Content-Type': type, 'Cache-Control': 'no-store' };
+    if (!p.endsWith('.png')) headers['Content-Disposition'] = `attachment; filename="${q.get('id')}-${q.get('name')}"`;
+    res.writeHead(200, headers);
+    res.end(readFileSync(p));
+  },
+  'POST /api/ml/start': async (req, res) => {
+    const body = await readBody(req);
+    if (!ML_TASKS[body.task]) return json(res, 400, { error: 'Tarea desconocida.' });
+    if (ml.status().running) return json(res, 409, { error: 'Ya hay un entrenamiento en curso.' });
+    json(res, 200, ml.start(body.task, body.params || {}));
+  },
+  'POST /api/ml/cancel': (req, res) => json(res, 200, { cancelled: ml.cancel() }),
   'POST /api/shutdown': (req, res) => { json(res, 200, { ok: true }); shutdown(); },
 };
 

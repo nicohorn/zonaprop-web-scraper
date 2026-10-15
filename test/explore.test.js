@@ -82,7 +82,7 @@ test('sanitizeSettings: defaults y saneo de lo que llega del formulario', () => 
   const s = sanitizeSettings({
     operaciones: ['venta', 'robo'], tipos: 'casas\nnaves-espaciales', zonas: 'rosario\n\n rosario \npalermo',
     urls: ['https://www.zonaprop.com.ar/casas-venta-rosario.html', 'https://example.com/x.html'],
-    delayMin: 0, delayMax: 0.5, maxPagesPerSearch: 9999, maxDetailsPerRun: '', headless: 1,
+    delayMin: 0, delayMax: 0.5, maxPagesPerSearch: 9999, maxDetailsPerRun: '', headless: 1, soloCaba: false,
   });
   assert.deepEqual(s.operaciones, ['venta']);
   assert.deepEqual(s.tipos, ['casas']);
@@ -140,4 +140,18 @@ test('historial: detecta qué campos cambiaron y el CSV puede traer sólo la ver
   const latest = await csv({ latestBy: 'id' });
   assert.equal(latest.rows, 2);
   assert.ok(latest.text.includes('95000') && !latest.text.includes('100000'));
+});
+
+test('soloCaba: fuerza capital-federal, filtra URLs y reconoce ubicaciones de CABA', async () => {
+  const { isCabaLocation } = await import('../src/caba.js');
+  const s = sanitizeSettings({
+    zonas: 'gba-norte',
+    urls: ['https://www.zonaprop.com.ar/departamentos-venta-palermo.html', 'https://www.zonaprop.com.ar/casas-venta-pilar.html'],
+  });
+  assert.deepEqual(s.zonas, ['capital-federal']);
+  assert.deepEqual(s.urls, ['https://www.zonaprop.com.ar/departamentos-venta-palermo.html']);
+  assert.deepEqual(
+    ['Palermo, Capital Federal', 'Las Cañitas, Palermo', 'Belgrano C, Belgrano', 'Pilar, GBA Norte', 'La Plata, Buenos Aires (fuera de GBA)', null].map(isCabaLocation),
+    [true, true, true, false, false, false],
+  );
 });

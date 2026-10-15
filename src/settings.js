@@ -6,11 +6,15 @@ import { join } from 'node:path';
 import { config } from '../config.js';
 import { OPERACIONES, TIPOS } from './explore.js';
 import { readJson, writeJson } from './storage.js';
+import { CABA_ZONA, isCabaZona } from './caba.js';
+import { searchSlug, parseSlug } from './urls.js';
 
 export const DEFAULT_SETTINGS = {
   operaciones: ['venta', 'alquiler'],
   tipos: [], // vacío = todos los inmuebles
-  zonas: [], // vacío = todo el país
+  zonas: ['capital-federal'], // con soloCaba se fuerza; sin soloCaba, vacío = todo el país
+  // Sólo CABA: fuerza la zona capital-federal y descarta avisos de otras zonas (ver src/caba.js).
+  soloCaba: true,
   urls: [], // búsquedas armadas a mano en el sitio (URL de la primera página)
   // Hasta qué página paginar una búsqueda antes de partirla por precio. Verificado: la 500
   // todavía es real y la 700 ya no. 300 deja margen.
@@ -47,11 +51,14 @@ export function sanitizeSettings(raw = {}) {
   const maxDetails = raw.maxDetailsPerRun === null || raw.maxDetailsPerRun === '' || raw.maxDetailsPerRun === undefined
     ? null
     : Math.trunc(clamp(raw.maxDetailsPerRun, 1, 1e9, 1));
+  const soloCaba = raw.soloCaba === undefined ? d.soloCaba : Boolean(raw.soloCaba);
+  const urls = [...new Set(lines(raw.urls).filter((u) => /^https?:\/\/(www\.)?zonaprop\.com\.ar\/[^/]+\.html/.test(u)))];
   return {
+    soloCaba,
     operaciones: raw.operaciones === undefined ? d.operaciones : among(raw.operaciones, OPERACIONES),
     tipos: among(raw.tipos, TIPOS),
-    zonas: [...new Set(lines(raw.zonas))],
-    urls: [...new Set(lines(raw.urls).filter((u) => /^https?:\/\/(www\.)?zonaprop\.com\.ar\/[^/]+\.html/.test(u)))],
+    zonas: soloCaba ? [CABA_ZONA] : [...new Set(lines(raw.zonas))],
+    urls: soloCaba ? urls.filter((u) => isCabaZona(parseSlug(searchSlug(u)).zona)) : urls,
     maxPagesPerSearch: Math.trunc(clamp(raw.maxPagesPerSearch, 1, 500, d.maxPagesPerSearch)),
     includeDevelopments: raw.includeDevelopments === undefined ? d.includeDevelopments : Boolean(raw.includeDevelopments),
     trackChanges: Boolean(raw.trackChanges),

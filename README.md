@@ -74,6 +74,34 @@ Para el análisis:
 - `published_days` es relativo a `scraped_at`.
 - Un aviso que aparece en varias búsquedas queda con la etiqueta de la primera que lo encontró.
 
+## Sólo CABA
+
+Por defecto `soloCaba: true` (`src/settings.js`, `src/caba.js`): la zona se fuerza a `capital-federal`, las URLs pegadas a mano sólo se aceptan si apuntan a CABA o a uno de sus barrios, y cada aviso se guarda sólo si su `location` termina en `Capital Federal` o en un barrio porteño (el sitio rellena con otras zonas). La fase de fichas también saltea avisos fuera de CABA ya guardados. Para volver a todo el país: `"soloCaba": false` en `data/settings.json`.
+
+## Modelos (CABA)
+
+Sección de la interfaz en <http://localhost:3210/modelos> (botón **Modelos** arriba). Entrena con lo que haya en `data/` y deja cada corrida en `data/ml/runs/<fecha>-<tarea>/` (params, result.json, CSV y gráficos).
+
+Instalación de Python (una vez; Python 3.11–3.13, por ejemplo el de Anaconda):
+
+```powershell
+python -m venv ml\.venv
+ml\.venv\Scripts\python.exe -m pip install -r ml\requirements.txt
+```
+
+La interfaz usa `ml/.venv` sola (o la variable `ZP_PYTHON`). Cada modelo trae parámetros por defecto: elegir, **Entrenar** y mirar la barra de avance; **Cancelar** corta el proceso. Resultados (métricas, tablas, gráficos, CSV descargables) aparecen a la derecha; las corridas anteriores quedan listadas.
+
+| Modelo | Qué hace | Datos mínimos |
+| --- | --- | --- |
+| A · Precio | Ridge + LightGBM sobre log(precio) o USD/m²; métricas en USD, importancia, SHAP | 60 avisos del tipo elegido |
+| B · Oportunidades | residuos fuera de muestra + IsolationForest vs. mediana del barrio; ranking de baratos | 60 |
+| C · Renta vs. venta | alquiler (pesos → USD con el MEP indicado) / venta USD/m², por barrio | avisos de venta **y** alquiler |
+| D · Segmentos | k-means o HDBSCAN, perfil por segmento y PCA | 50 |
+| E · Texto | TF-IDF: términos que suben/bajan el USD/m² y mejora del modelo al sumar texto | 80 |
+| F · Supervivencia | Kaplan-Meier/Cox del tiempo hasta la baja; hoy avisa que faltan datos (requiere re-scrapes con historial y fichas) | 30 bajas |
+
+Notebook: `notebooks/01_price_prediction.ipynb` (kernel de `ml/.venv`; abrir con `ml\.venv\Scripts\jupyter lab`). Código común en `ml/zpml.py`, entrenamientos en `ml/run.py`, parámetros y defaults en `ml/tasks.json`, orquestación desde Node en `src/ml.js`.
+
 ## Historial de cambios
 
 Opción de la interfaz, apagada por defecto. Sin ella, un aviso ya guardado no se vuelve a
