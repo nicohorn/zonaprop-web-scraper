@@ -61,6 +61,23 @@
         "default": 0.2,
         "label": "Proporción de test"
       },
+      "split": {
+        "type": "select",
+        "options": [
+          "aleatorio",
+          "temporal"
+        ],
+        "default": "aleatorio",
+        "label": "Separación train/test (temporal = test con los avisos más nuevos)"
+      },
+      "seed": {
+        "type": "number",
+        "min": 0,
+        "max": 999999,
+        "step": 1,
+        "default": 42,
+        "label": "Semilla aleatoria"
+      },
       "learning_rate": {
         "type": "number",
         "min": 0.005,
@@ -346,6 +363,23 @@
         "step": 0.05,
         "default": 0.2,
         "label": "Proporción de test"
+      },
+      "split": {
+        "type": "select",
+        "options": [
+          "aleatorio",
+          "temporal"
+        ],
+        "default": "aleatorio",
+        "label": "Separación train/test (temporal = test con los avisos más nuevos)"
+      },
+      "seed": {
+        "type": "number",
+        "min": 0,
+        "max": 999999,
+        "step": 1,
+        "default": 42,
+        "label": "Semilla aleatoria"
       }
     },
     "question": "¿Qué palabras del aviso mueven el precio?",

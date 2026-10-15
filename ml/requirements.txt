@@ -7,3 +7,4 @@ matplotlib>=3.8
 lifelines>=0.29
 jupyter
 ipykernel
+joblib>=1.3

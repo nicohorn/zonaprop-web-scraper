@@ -126,6 +126,37 @@ export class MlRunner extends EventEmitter {
     return { id, params: readJsonSafe(join(dir, 'params.json')), result: readJsonSafe(join(dir, 'result.json')) };
   }
 
+  /** Modelos de precio guardados (corridas de A con model.json), el último primero. */
+  priceModels() {
+    const latest = readJsonSafe(join(RUNS_DIR, '..', 'latest_price.json'))?.run ?? null;
+    if (!existsSync(RUNS_DIR)) return { latest, models: [] };
+    const models = readdirSync(RUNS_DIR).sort().reverse().map((id) => {
+      const m = readJsonSafe(join(RUNS_DIR, id, 'model.json'));
+      if (!m || !existsSync(join(RUNS_DIR, id, 'model.joblib'))) return null;
+      return { run: id, modelo: m.modelo, operacion: m.operacion, currency: m.currency, tipo: m.tipo, target: m.target, split: m.split,
+        n_train: m.n_train, n_test: m.n_test, metricas_test: m.metricas_test, barrios: Object.keys(m.barrios || {}), tipos: m.tipos, predictable: m.predictable !== false };
+    }).filter(Boolean);
+    return { latest, models };
+  }
+
+  /** Corre ml/predict.py con {run, inputs} por stdin; devuelve su JSON. */
+  predict(run, inputs) {
+    return new Promise((resolveP) => {
+      const child = spawn(pythonPath(), [join(ROOT, 'ml', 'predict.py')], { cwd: ROOT, env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }, windowsHide: true });
+      let out = '', err = '';
+      const timer = setTimeout(() => child.kill(), 60_000);
+      child.stdout.setEncoding('utf8').on('data', (c) => { out += c; });
+      child.stderr.setEncoding('utf8').on('data', (c) => { err += c; });
+      child.on('error', (e) => { clearTimeout(timer); resolveP({ ok: false, error: `No se pudo iniciar Python: ${e.message}` }); });
+      child.on('close', () => {
+        clearTimeout(timer);
+        const line = out.trim().split(/\r?\n/).pop() || '';
+        try { resolveP(JSON.parse(line)); } catch { resolveP({ ok: false, error: (err || out || 'Sin respuesta de predict.py').slice(-600) }); }
+      });
+      child.stdin.end(JSON.stringify({ run: run || null, inputs: inputs || {} }));
+    });
+  }
+
   /** Ruta de un artefacto de una corrida, o null si el nombre no es seguro. */
   artifactPath(id, name) {
     if (!/^[\w-]+$/.test(id) || !/^[\w.%-]+\.(png|csv|json|txt)$/.test(name)) return null;

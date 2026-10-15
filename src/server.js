@@ -172,6 +172,12 @@ const routes = {
     if (ml.status().running) return json(res, 409, { error: 'Ya hay un entrenamiento en curso.' });
     json(res, 200, ml.start(body.task, body.params || {}));
   },
+  'GET /api/ml/price-models': (req, res) => json(res, 200, ml.priceModels()),
+  'POST /api/ml/predict': async (req, res) => {
+    const body = await readBody(req);
+    const r = await ml.predict(typeof body.run === 'string' ? body.run : null, body.inputs && typeof body.inputs === 'object' ? body.inputs : {});
+    json(res, r.ok ? 200 : 400, r);
+  },
   'POST /api/ml/cancel': (req, res) => json(res, 200, { cancelled: ml.cancel() }),
   'POST /api/shutdown': (req, res) => { json(res, 200, { ok: true }); shutdown(); },
 };

@@ -104,6 +104,15 @@ tablas, gráficos, CSV) a la derecha; cada corrida queda en `data/ml/runs/<fecha
 | **E · Texto** | ¿Qué palabras del aviso mueven el precio? | Con descripciones (mejor con fichas). | 80 |
 | **F · Tiempo hasta baja** | ¿Cuánto tarda un aviso en desaparecer? | Más adelante: requiere re-scrapes con historial de cambios. | 30 bajas |
 
+**Train/test**: A y E separan un test (`aleatorio` con semilla, o `temporal` = los avisos más
+nuevos quedan para test); todas las métricas mostradas son sobre ese test.
+
+**Predecir precio**: cada corrida de A guarda el modelo (`model.joblib` + `model.json` con
+variables, barrios, filtros, métricas y tamaños de train/test) y `data/ml/latest_price.json`
+apunta a la última. En el panel *Predecir precio* de Modelos se elige el modelo (por defecto el
+último), se cargan barrio, tipo, m², ambientes, baños, etc., y devuelve precio y USD/m² con un
+rango (percentiles de error del test). Por debajo: `POST /api/ml/predict` → `ml/predict.py`.
+
 Defaults: venta, USD, departamentos, test 20 %. **El dólar MEP por defecto (1450) es fijo:
 actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus rangos están en
 `ml/tasks.json`.
@@ -154,5 +163,4 @@ Pendiente:
 - Correr la fase de fichas sobre CABA (antigüedad, amenities, descripción completa).
 - Re-scrapes con *historial de cambios* para el modelo F.
 - Interruptor de *Sólo CABA* en la interfaz.
-- Guardar los modelos entrenados para reutilizarlos.
 - Dólar MEP en vivo en lugar del valor fijo.

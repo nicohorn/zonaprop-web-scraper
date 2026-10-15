@@ -57,11 +57,29 @@ test('run.py: entrena price y yields sobre datos sintéticos', { skip: !hasDeps 
   lines.push(JSON.stringify({ id: '9', url: 'x', price: 1, price_currency: 'USD', location: 'Pilar, GBA Norte', operacion: 'venta' }));
   writeFileSync(join(data, 'listings.jsonl'), lines.join('\n') + '\n');
   for (const [task, params] of [['price', { shap: false, n_estimators: 50 }], ['yields', { min_n: 3 }], ['segments', {}]]) {
-    const dir = join(data, 'run-' + task);
+    const dir = join(data, 'ml', 'runs', 'run-' + task);
     spawnSync(process.execPath, ['-e', `require('fs').mkdirSync(${JSON.stringify(dir)},{recursive:true});require('fs').writeFileSync(${JSON.stringify(join(dir, 'params.json'))},${JSON.stringify(JSON.stringify(params))})`]);
     const r = spawnSync(py, [join(ROOT, 'ml', 'run.py'), task, '--run-dir', dir], { encoding: 'utf8', env: { ...process.env, ZP_DATA_DIR: data, PYTHONUTF8: '1' } });
     const res = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'));
     assert.equal(res.status, 'ok', `${task}: ${res.error}\n${r.stderr}`);
     assert.ok(res.artifacts.every((a) => existsSync(join(dir, a))));
   }
+  // modelo guardado + predicción
+  const env = { ...process.env, ZP_DATA_DIR: data, PYTHONUTF8: '1' };
+  assert.equal(JSON.parse(readFileSync(join(data, 'ml', 'latest_price.json'), 'utf8')).run, 'run-price');
+  const meta = JSON.parse(readFileSync(join(data, 'ml', 'runs', 'run-price', 'model.json'), 'utf8'));
+  assert.ok(meta.n_train > meta.n_test && meta.n_test > 0);
+  const p = spawnSync(py, [join(ROOT, 'ml', 'predict.py')], { input: JSON.stringify({ inputs: { barrio: 'Palermo', tipo: 'departamento', superficie_cubierta: 50 } }), encoding: 'utf8', env });
+  const out = JSON.parse(p.stdout.trim().split(/\r?\n/).pop());
+  assert.equal(out.ok, true, p.stderr + p.stdout);
+  assert.ok(out.precio > 50 * 1000 && out.precio < 50 * 6000, `precio ${out.precio}`);
+  assert.ok(out.rango_80[0] <= out.precio && out.precio <= out.rango_80[1]);
+  const none = spawnSync(py, [join(ROOT, 'ml', 'predict.py')], { input: JSON.stringify({ run: 'no-existe' }), encoding: 'utf8', env });
+  assert.match(none.stdout, /entrená el modelo A/);
+});
+
+test('split temporal: el test son los avisos más nuevos', { skip: !hasDeps && 'sin Python' }, () => {
+  const code = "import sys;sys.path.insert(0,'ml');import pandas as pd,run;d=pd.DataFrame({'date_posted':['2026-01-0%d'%i for i in range(1,10)]+['2026-02-01']});tr,te=run.split_idx(d,{'split':'temporal','test_size':0.2});print(sorted(te.tolist()))";
+  const r = spawnSync(py, ['-c', code], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(r.stdout.trim(), '[8, 9]', r.stderr);
 });

@@ -133,6 +133,41 @@ def texts(d):
     return (d["title"].fillna("") + ". " + desc.fillna(d.get("description_short", "")).fillna("")).astype(str)
 
 
+def split_idx(d: pd.DataFrame, p) -> tuple[np.ndarray, np.ndarray]:
+    """aleatorio: train_test_split con semilla; temporal: el test son los avisos más nuevos."""
+    from sklearn.model_selection import train_test_split
+    n, ts = len(d), float(p.get("test_size", 0.2))
+    if p.get("split") == "temporal":
+        col = lambda c: pd.to_datetime(d[c] if c in d else pd.Series(pd.NaT, index=d.index), errors="coerce", utc=True)
+        when = col("date_posted").fillna(col("scraped_at"))
+        order = np.argsort(when.fillna(when.min()).values, kind="stable")
+        k = max(1, int(round(n * ts)))
+        return np.sort(order[:-k]), np.sort(order[-k:])
+    return train_test_split(np.arange(n), test_size=ts, random_state=int(p.get("seed", 42)))
+
+
+def save_price_model(model, ridge, name, columns, nums, cats, X, d, p, metrics_, n_tr, n_te, resid_log):
+    """Modelo + metadatos en la carpeta de la corrida; data/ml/latest_price.json apunta a la última."""
+    import joblib
+    levels = {c: [str(v) for v in X[c].cat.categories] for c in cats}
+    q = np.quantile(resid_log, [0.1, 0.25, 0.5, 0.75, 0.9]) if len(resid_log) else np.zeros(5)
+    meta = {
+        "run": RUN.name, "created_at": datetime.now(timezone.utc).isoformat(), "modelo": name,
+        "target": p["target"], "operacion": p["operacion"], "currency": p["currency"], "fx_mep": p["fx_mep"], "tipo": p["tipo"],
+        "split": p.get("split", "aleatorio"), "test_size": p["test_size"], "seed": p.get("seed", 42),
+        "n_train": int(n_tr), "n_test": int(n_te), "metricas_test": metrics_,
+        "columns": list(columns), "nums": nums, "cats": cats, "levels": levels,
+        "barrios": d["barrio"].value_counts().to_dict(), "tipos": sorted(d["tipo_prop"].dropna().unique().tolist()),
+        "resid_log_quantiles": {"q10": float(q[0]), "q25": float(q[1]), "q50": float(q[2]), "q75": float(q[3]), "q90": float(q[4])},
+        "predictable": not p.get("use_text"),
+    }
+    joblib.dump({"gbm": model, "ridge": ridge, "meta": meta}, RUN / "model.joblib")
+    (RUN / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1, default=_py), encoding="utf-8")
+    ARTIFACTS.append("model.json")
+    if meta["predictable"]:
+        (RUN.parent.parent / "latest_price.json").write_text(json.dumps({"run": RUN.name}), encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------------------------
 def task_price(p):
     from sklearn.model_selection import train_test_split
@@ -146,8 +181,7 @@ def task_price(p):
     sup = d["sup"].values
     y = np.log(y_price) if p["target"] == "log_price" else y_price / sup
     to_price = (lambda v, s: np.exp(v)) if p["target"] == "log_price" else (lambda v, s: v * s)
-    idx = np.arange(len(d))
-    tr, te = train_test_split(idx, test_size=float(p["test_size"]), random_state=42)
+    tr, te = split_idx(d, p)
     Xtr, Xte = X.iloc[tr].reset_index(drop=True), X.iloc[te].reset_index(drop=True)
     if p.get("use_text"):
         progress(15, "Texto: TF-IDF + SVD")
@@ -202,8 +236,11 @@ def task_price(p):
     out["pred"] = pred
     out["residuo_%"] = (out["price_x"] / out["pred"] - 1) * 100
     save_csv(out.sort_values("residuo_%"), "predicciones_test.csv")
-    return {"n_train": len(tr), "n_test": len(te), "modelo": name,
-            "metricas": {"Ridge": m_ridge, name: m_gbm},
+    progress(96, "Guardando modelo")
+    save_price_model(model, rp, name, Xtr.columns, nums, cats, X, d, p, {"Ridge": m_ridge, name: m_gbm},
+                     len(tr), len(te), np.log(y_price[te] / pred))
+    return {"n_train": len(tr), "n_test": len(te), "split": p["split"], "modelo": name, "modelo_guardado": "model.joblib",
+            "metricas": {"Ridge (test)": m_ridge, f"{name} (test)": m_gbm},
             "tablas": {"Importancia": table(imp, 20)} if imp is not None else {}}
 
 
@@ -346,7 +383,7 @@ def task_text(p):
     need_rows(d, 80, "el modelo de texto")
     t = texts(d)
     y = np.log(d["price_x"].values)
-    tr, te = train_test_split(np.arange(len(d)), test_size=float(p["test_size"]), random_state=42)
+    tr, te = split_idx(d, p)
     progress(20, "TF-IDF")
     A, B, vec, Atf, Btf = text_svd(t.iloc[tr], t.iloc[te], p)
     progress(40, "Ridge sólo texto (log precio por m²)")
@@ -366,7 +403,8 @@ def task_text(p):
     progress(75, "Modelo estructurado + texto")
     m2, _ = gbm({"n_estimators": 600}, len(tr)); m2.fit(pd.concat([Xtr, A], axis=1), y[tr])
     res[f"{name} + texto"] = metrics(np.exp(y[te]), np.exp(m2.predict(pd.concat([Xte, B], axis=1))))
-    return {"n": len(d), "vocabulario": int(len(terms)), "fuente_texto": "description" if "description" in d else "title + description_short",
+    res = {f"{k} (test)": v for k, v in res.items()}
+    return {"n": len(d), "n_train": len(tr), "n_test": len(te), "split": p["split"], "vocabulario": int(len(terms)), "fuente_texto": "description" if "description" in d else "title + description_short",
             "metricas": res, "tablas": {"Términos que mueven el USD/m²": table(words, 30)}}
 
 

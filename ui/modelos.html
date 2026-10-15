@@ -100,6 +100,26 @@
       </div>
       <div id="lastmsg"></div>
     </section>
+    <section id="predict">
+      <h2>Predecir precio (modelo A)</h2>
+      <div id="pmsg" class="hint">Cargando modelos…</div>
+      <form id="pform" hidden>
+        <label class="f">Modelo guardado</label><select name="run"></select>
+        <div class="grid2">
+          <div><label class="f">Barrio</label><select name="barrio"></select></div>
+          <div><label class="f">Tipo</label><select name="tipo"></select></div>
+          <div><label class="f">Sup. total (m²)</label><input type="number" name="superficie_total" value="55" min="1"></div>
+          <div><label class="f">Sup. cubierta (m²)</label><input type="number" name="superficie_cubierta" value="50" min="1"></div>
+          <div><label class="f">Ambientes</label><input type="number" name="ambientes" value="2" min="0"></div>
+          <div><label class="f">Dormitorios</label><input type="number" name="dormitorios" value="1" min="0"></div>
+          <div><label class="f">Baños</label><input type="number" name="banos" value="1" min="0"></div>
+          <div><label class="f">Cocheras</label><input type="number" name="cocheras" value="0" min="0"></div>
+          <div><label class="f">Expensas (ARS/mes)</label><input type="number" name="expensas" placeholder="opcional" min="0"></div>
+        </div>
+        <div class="controls"><button class="btn primary" id="pbtn" type="submit">Predecir</button></div>
+      </form>
+      <div id="pout"></div>
+    </section>
     <section>
       <h2>Corridas anteriores</h2>
       <div class="runs" id="runs"></div>
@@ -208,7 +228,7 @@ function renderStatus() {
   }
   $('#runs').innerHTML = s.runs.length ? s.runs.map((r) => `<div><a data-id="${esc(r.id)}">${esc(r.id)}</a> <span class="hint">${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</span></div>`).join('') : '<p class="hint">Todavía no hay corridas.</p>';
   $('#runs').querySelectorAll('a').forEach((a) => a.onclick = () => showRun(a.dataset.id));
-  if (wasRunning && !s.running && s.last) showRun(s.last.id);
+  if (wasRunning && !s.running && s.last) { showRun(s.last.id); loadPriceModels(); }
   wasRunning = s.running;
 }
 
@@ -225,6 +245,51 @@ $('#run').onclick = async () => {
 };
 $('#cancel').onclick = () => api('/api/ml/cancel', {});
 $('#defaults').onclick = () => { delete saved[current]; localStorage.setItem('mlParams', JSON.stringify(saved)); renderForm(true); };
+
+// --- Predicción ---------------------------------------------------------------------------
+let pmodels = null;
+const usd = (v, cur) => `${cur || 'USD'} ${Math.round(v).toLocaleString('es-AR')}`;
+function fillPredict(keep) {
+  const f = $('#pform');
+  const m = pmodels.models.find((x) => x.run === f.run.value) || pmodels.models[0];
+  const prevB = keep ? f.barrio.value : 'Palermo', prevT = keep ? f.tipo.value : 'departamento';
+  const barrios = [...m.barrios].sort((a, b) => a.localeCompare(b, 'es'));
+  f.barrio.innerHTML = barrios.map((b) => `<option ${b === prevB ? 'selected' : ''}>${esc(b)}</option>`).join('');
+  if (!barrios.includes(prevB) && barrios.length) f.barrio.value = barrios.includes('Palermo') ? 'Palermo' : barrios[0];
+  f.tipo.innerHTML = m.tipos.map((t) => `<option ${t === prevT ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const g = Object.entries(m.metricas_test || {}).find(([k]) => !k.startsWith('Ridge'))?.[1] || {};
+  $('#pmsg').innerHTML = `${esc(m.modelo)} · ${esc(m.operacion)} ${esc(m.currency)} · tipo ${esc(m.tipo)} · split ${esc(m.split)} (train ${m.n_train}, test ${m.n_test}) · error mediano en test ${fmt(g['MAPE_mediana_%'])} %`;
+}
+async function loadPriceModels() {
+  try { pmodels = await api('/api/ml/price-models'); } catch { return; }
+  const f = $('#pform');
+  const usable = pmodels.models.filter((m) => m.predictable);
+  if (!usable.length) { f.hidden = true; $('#pmsg').innerHTML = 'Todavía no hay un modelo de precio guardado: <b>entrená el modelo A primero</b>.'; return; }
+  pmodels.models = usable;
+  const cur = f.run.value || pmodels.latest || usable[0].run;
+  f.run.innerHTML = usable.map((m) => `<option value="${esc(m.run)}" ${m.run === cur ? 'selected' : ''}>${esc(m.run)}${m.run === pmodels.latest ? ' (último)' : ''}</option>`).join('');
+  f.hidden = false;
+  fillPredict(true);
+}
+$('#pform').run.onchange = () => fillPredict(true);
+$('#pform').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = $('#pform'), inputs = {};
+  for (const k of ['barrio', 'tipo', 'superficie_total', 'superficie_cubierta', 'ambientes', 'dormitorios', 'banos', 'cocheras', 'expensas']) inputs[k] = f[k].value;
+  $('#pbtn').disabled = true; $('#pout').innerHTML = '<p class="hint">Calculando…</p>';
+  try {
+    const r = await api('/api/ml/predict', { run: f.run.value, inputs });
+    const g = r.error_test || {};
+    $('#pout').innerHTML = `<p style="font-size:22px;margin:12px 0 4px"><b>${usd(r.precio, r.moneda)}</b></p>
+      <p class="hint">${usd(r.precio_m2, r.moneda)}/m² sobre ${fmt(r.superficie_usada)} m² · ${esc(r.operacion)}</p>
+      <p>Rango probable (80 %): ${usd(r.rango_80[0], r.moneda)} – ${usd(r.rango_80[1], r.moneda)}<br>
+      <span class="hint">50 %: ${usd(r.rango_50[0], r.moneda)} – ${usd(r.rango_50[1], r.moneda)} · Ridge: ${usd(r.ridge_precio, r.moneda)}</span></p>
+      <p class="hint">Error del modelo en test (${r.n_test} avisos, split ${esc(r.split)}): mediana ${fmt(g['MAPE_mediana_%'])} %, dentro de ±10 %: ${fmt(g['dentro_10%_%'])} %.</p>
+      ${(r.avisos || []).map((w) => `<p class="err">${esc(w)}</p>`).join('')}`;
+  } catch (e) { $('#pout').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  $('#pbtn').disabled = false;
+};
+loadPriceModels();
 
 (async () => {
   state = await api('/api/ml/state');
