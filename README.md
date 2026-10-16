@@ -109,7 +109,9 @@ duplicada o republicada, nunca queda en train y en test), elige hiperparámetros
 agrupados sobre train y evalúa una sola vez en test, contra baselines (mediana global, mediana
 USD/m² del barrio × m², Ridge). Resultado actual (iteración 3, variante `v4_todo_sin_iso`: calle normalizada, target encoding
 fuera de fold, TF-IDF+SVD y rasgos de texto v3): mediana de error 9,9 % en test (iteración 2: 10,8 %; v1 en el mismo
-test: 13,3 %; barrio × m²: 18,5 %; Ridge: 14,4 %). Todas las iteraciones y variantes siguen en /modelos. Proceso completo, conteo de filas, métricas y limitaciones en
+test: 13,3 %; barrio × m²: 18,5 %; Ridge: 14,4 %). Iteración 4 (hiperparámetros Optuna): 9,9 % (empate); se agregó un modelo de respaldo sin
+dirección para el formulario (10,9 % en test). Historial cronológico en [`docs/historial_modelo_precio.md`](docs/historial_modelo_precio.md)
+(pestaña «Historial» en /modelos). Todas las iteraciones y variantes siguen en /modelos. Proceso completo, conteo de filas, métricas y limitaciones en
 [`docs/modelo_precio.md`](docs/modelo_precio.md). E separa `aleatorio` o `temporal`.
 
 **Predecir precio**: cada corrida de A guarda el modelo (`model.joblib` + `model.json` con

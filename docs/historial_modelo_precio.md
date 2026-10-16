@@ -8,6 +8,7 @@ Orden cronológico. Todas las corridas siguen en `data/ml/runs/` y en /modelos (
 | 1 | 16/10 | `e10deb7` | `20261016-122915-price` | limpieza con conteos, casi-duplicados v1 (huella), test agrupado, CV 5 folds, baselines, intervalo | test agrupado (8.392) | 13,73 | 13,62 ± 0,17 | 38,1 | 79,9 |
 | 2 | 16/10 | `5c4fd47`, `4591caf`, `61c7e8e` | ablación `20261016-140544-price_ablation`; final `20261016-143053-price` | duplicados v2 validados, texto v2, calle, target log USD/m², Huber (`v3_ppm2_huber`) | test agrupado (9.300) | 10,81 (v1 en el mismo test: 13,33) | 10,97 ± 0,09 | 46,6 | 80,5 |
 | 3 | 16/10 | `c9b2f86` … `5f03c3f` | ablaciones `20261016-164504-…`, `20261016-171122-…`; final `20261016-171812-price` | calle normalizada, target encoding OOF, TF-IDF+SVD, texto v3 (`v4_todo_sin_iso`) | mismo test (9.300) | 9,88 | 10,02 ± 0,17 | 50,7 | 80,4 |
+| 4 | 16/10 | `acbf834` … | ablación `20261016-185717-price_ablation`; Optuna `data/ml/optuna/v4_todo_sin_iso.json`; final `20261016-193214-price` | CatBoost/mezcla/pesos probados (no adoptados), hiperparámetros Optuna, respaldo sin dirección (10,93 %), SHAP agrupado | mismo test (9.300) | 9,90 (empate con iter. 3) | 10,06 ± 0,30 | 50,4 | 80,7 |
 
 Notas: el 12,1 % de la iteración 0 no es comparable (el test compartía departamentos con train). Desde la iteración 2 el test es el mismo, así que 13,33 → 10,81 → 9,88 son comparables entre sí.
 

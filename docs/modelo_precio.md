@@ -327,3 +327,67 @@ Peores barrios en test: Villa Lugano 18,9 % (sesgo −12,5 %), Constitución 17,
 - Villa Lugano sigue cerca de 19 %, con sesgo fuerte: pocos avisos y muy heterogéneos.
 - El modelo depende mucho de la dirección: sin calle/altura (formulario sin dirección) la predicción usa sólo los priors de barrio y es menos precisa.
 - Pendiente: CatBoost/ensambles y búsqueda bayesiana de hiperparámetros.
+
+---
+
+# Iteración 4 (16/10/2026): CatBoost, mezcla, Optuna, pesos, respaldo sin dirección y SHAP
+
+Mismo test agrupado (9.300) que las iteraciones 2 y 3. Ver también `docs/historial_modelo_precio.md`.
+
+## 17. Qué se probó
+
+- **SHAP para v4**: se explica la matriz interna del modelo (encodings + componentes de texto) y las 30 columnas `svd_*` se suman en un único grupo «texto (TF-IDF+SVD)» (SHAP es aditivo). Salidas: `shap_summary.png` y `shap_agrupado.csv`.
+- **CatBoost** (`catboost==1.2.8`, fijado en `ml/requirements.txt`): mismas variables que v4, RMSE sobre el target centrado, profundidad 6, early stopping. Con Huber arrancaba de 0 y daba ~40 % de error en la prueba chica; por eso se usa RMSE.
+- **Mezcla LightGBM + CatBoost**: el peso se elige con predicciones fuera de fold y cross-fitting (para cada fold, el peso que mejor anda en los otros folds). No se probó mezcla con Ridge (14,3 % en CV, muy por detrás).
+- **Pesos por rango de precio** sobre v4 (`v5_pesos`), contra la regresión a la media.
+- **Optuna** (`optuna==4.5.0`, `ml/optuna_precio.py`): 12 intentos TPE, CV agrupado de 3 folds sobre train, num_leaves, min_child_samples, learning_rate y reg_lambda. Resultados en `data/ml/optuna/v4_todo_sin_iso.json`.
+- **Respaldo sin dirección** (`v5_sin_direccion`): mismas variables pero sin calle ni encodings de calle/cuadra. Lo usa el formulario cuando no se carga dirección y tiene sus propias métricas en el test.
+
+## 18. Ablación (CV 5 folds agrupados, train) — corrida `20261016-185717-price_ablation`
+
+| variante | MAPE CV | ±std | dentro 10 % | < 80k | > 600k | ≥ 150 m² | barrios débiles | sesgo < 80k | sesgo > 600k |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v4_todo_sin_iso (iter. 3) | 10,14 | 0,14 | 49,4 | 10,63 | 15,28 | 14,54 | 13,90 | −6,6 | +9,8 |
+| v5_catboost (sólo CatBoost) | 10,78 | 0,15 | 47,0 | 10,84 | 16,74 | 15,67 | 14,89 | −6,1 | +8,1 |
+| mezcla LightGBM + CatBoost (pesos 0,1–0,3 por fold) | 10,14 | 0,12 | — | 10,43 | 15,09 | 14,45 | 13,70 | −6,4 | +9,7 |
+| v5_pesos | 10,18 | 0,13 | 49,3 | 10,29 | 15,04 | 14,58 | 14,24 | −6,3 | +10,0 |
+| v5_sin_direccion | 11,14 | 0,20 | 45,8 | 11,11 | 19,01 | 16,70 | 15,72 | −7,4 | +15,7 |
+
+MAPE OOF según el peso de CatBoost: 0 → 10,15; 0,1 → 10,11; 0,2 → 10,13; 0,3 → 10,13; 0,5 → 10,19; 1 → 10,78.
+
+Optuna (3 folds): la configuración de la iteración 3 (num_leaves 127, min_child_samples 10, lr 0,03) dio 10,30 %. La mejor fue num_leaves 232, min_child_samples 23, lr 0,020, reg_lambda 6,6, con 10,25 %. Rango de los 12 intentos: 10,25–10,69 %.
+
+Lecturas: ni CatBoost, ni la mezcla, ni los pesos mejoran el error total más allá del ruido entre folds (≤ 0,03 pp). La mezcla mejora levemente todos los segmentos (≤ 0,2 pp, dentro del ruido). Los pesos mejoran baratos y caros, pero empeoran los barrios débiles. Optuna gana 0,05 pp en CV (menos de un desvío). Se adoptó igual porque es lo que eligió el CV; la mezcla y los pesos no se adoptaron. Todas las variantes quedan seleccionables.
+
+## 19. Resultado final (test agrupado, evaluación única) — corrida `20261016-193214-price`
+
+Variante `v4_todo_sin_iso` con hiperparámetros de Optuna (3.018 árboles).
+
+| modelo | MAPE test | dentro 10 % | R² log | MAE USD |
+|---|---:|---:|---:|---:|
+| Mediana USD/m² barrio × m² | 18,51 | 28,9 | 0,847 | 69.359 |
+| Ridge | 14,39 | 36,8 | 0,900 | 57.595 |
+| LightGBM v1 (mismo test) | 13,33 | 39,1 | 0,916 | 50.508 |
+| iteración 3 (grilla) | 9,88 | 50,7 | 0,948 | 38.988 |
+| **iteración 4 (Optuna)** | **9,90** | 50,4 | 0,948 | 38.850 |
+| respaldo sin dirección (nuevo) | 10,93 | 46,6 | 0,940 | 42.937 |
+
+CV en train: 10,02 ± 0,17 % (iter. 3) frente a 10,06 ± 0,30 % (iter. 4). El respaldo sin dirección da 11,08 ± 0,28 % en CV. Intervalo 80 % cubre 80,7 % del test; el 50 %, 50,3 %.
+
+| segmento | iter. 3 | iter. 4 | sesgo iter. 3 → 4 | respaldo sin dirección |
+|---|---:|---:|---:|---:|
+| todos | 9,88 | 9,90 | −0,3 → −0,2 | 10,93 |
+| < USD 80k | 10,28 | 10,45 | −6,2 → −6,3 | 11,27 |
+| > USD 600k | 14,45 | 13,78 | +8,9 → +8,4 | 18,42 |
+| ≥ 150 m² | 13,92 | 13,83 | +0,1 → +0,3 | 16,02 |
+| barrios débiles | 14,82 | 15,55 | −4,0 → −3,8 | 18,38 |
+
+Villa Lugano 19,9 % (sesgo −14,1 %), Constitución 18,0 %. Mayor SHAP medio por grupo: encoding calle+cuadra, barrio, texto (TF-IDF+SVD), encoding barrio×m², calle.
+
+**Conclusión honesta**: la iteración 4 no mejora el error total (9,90 vs 9,88: empate). Las mejoras útiles son de producto: SHAP funciona otra vez, el formulario sin dirección tiene un modelo propio medido (10,9 % en vez de usar el principal con la dirección vacía) y el pipeline admite CatBoost, mezclas y Optuna para futuras pruebas.
+
+## 20. Limitaciones que siguen
+
+- La regresión a la media no cede con pesos, mezcla ni calibración: los baratos siguen −6 % y los > USD 600k +8 %. Probablemente falta información (estado, vista, piso) que el texto no trae de forma consistente.
+- Villa Lugano (~20 %) y Constitución (~18 %): pocos avisos (68 y 81 en test) y mucha heterogeneidad.
+- El respaldo sin dirección es ~1 pp peor en total y ~5 pp peor en los caros.
