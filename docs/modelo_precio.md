@@ -266,3 +266,64 @@ Peores barrios en test: Villa Lugano 21,0 %, Constitución 18,3 %, La Boca 16,5 
 - La regla v2 de duplicados se validó con 40 pares; normalizar nombres de calle (alias tipo "Franklin D. Roosevelt") recuperaría algunos duplicados que hoy se escapan.
 
 Reproducir: `python ml/run.py price_ablation --run-dir …` (o tarea "A2 · Ablación" en /modelos), luego la tarea A con `variante=v3_ppm2_huber`; `python ml/validar_duplicados.py 60` para la validación.
+
+---
+
+# Iteración 3 (16/10/2026): calle normalizada, target encoding, TF-IDF y calibración
+
+Mismos datos, misma limpieza (duplicados v2) y **mismo test agrupado** que la iteración 2 (train 35.602 / test 9.300), así que las cifras son directamente comparables con el 10,81 %. Las variantes v1…v3 siguen seleccionables.
+
+## 13. Qué se probó (`ml/variantes_precio.py`)
+
+- **Calle normalizada** (`calle_norm`): apellido final de la calle, sin "Av.", nombres de pila ni altura ("Av. Franklin D. Roosevelt 3000" y "Roosevelt al 3000" → `roosevelt`; "ALBERDI, JUAN B., AV. 833" → `alberdi`).
+- **Target encoding fuera de fold** (`te`): media suavizada (m = 20) de log USD/m² por calle, calle+cuadra, barrio×ambientes y barrio×tramo de m², más el conteo. En el train de cada fold se calcula con 5 sub-folds internos (cada fila nunca ve su propio precio); para validar/predecir se usa la tabla de todo ese train.
+- **TF-IDF + SVD** (`tfidf`): título+descripción sin montos, 1-2 gramas, 30 componentes; se ajusta sólo con el train de cada fold.
+- **Rasgos de texto v3** (`features: 3`): piso alto/bajo, bajas expensas, terraza/parrilla propia, pileta, gimnasio, SUM, toilette, lavadero, cocina separada, doble circulación, esquina, dueño directo, "oportunidad", escritura, edificio antiguo, humedad/a refaccionar, amoblado, largo del texto.
+- **Calibración isotónica** (`calibracion`): corrección pred→real ajustada con predicciones fuera de fold (cross-fitting en el CV; en el modelo final, con el OOF sin calibrar de todo el train).
+- No probado: CatBoost (no está instalado en el venv) ni Optuna; la grilla de hiperparámetros de siempre (6 combinaciones, CV agrupado) se usó para la variante final.
+
+## 14. Ablación (CV 5 folds agrupados, sólo train)
+
+Corridas `20261016-164504-price_ablation` y `20261016-171122-price_ablation`, mismos hiperparámetros para todas (num_leaves 63).
+
+| variante | MAPE CV | ±std | dentro 10 % | < 80k | > 600k | ≥ 150 m² | barrios débiles | sesgo < 80k | sesgo > 600k |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v3_ppm2_huber (iter. 2) | 11,07 | 0,09 | 46,1 | 11,41 | 17,44 | 15,88 | 15,35 | −7,8 | +12,7 |
+| v4_calle_norm | 10,94 | 0,12 | 46,5 | 11,36 | 17,50 | 15,69 | 15,19 | −7,6 | +12,9 |
+| v4_texto3 (+ calle norm.) | 10,54 | 0,09 | 47,9 | 10,86 | 17,04 | 15,26 | 14,90 | −7,0 | +12,3 |
+| v4_te (+ calle norm.) | 10,63 | 0,20 | 47,7 | 11,00 | 15,47 | 14,88 | 14,18 | −7,1 | +9,3 |
+| v4_tfidf (+ calle norm.) | 10,66 | 0,11 | 47,4 | 10,95 | 17,30 | 15,81 | 14,72 | −7,3 | +13,5 |
+| v4_iso (v3 + calibración) | 11,06 | 0,08 | 46,0 | 11,15 | 17,64 | 16,17 | 15,31 | −7,7 | +7,0 |
+| v4_todo (todo + calibración) | 10,15 | 0,09 | 49,4 | 10,31 | 16,14 | 14,78 | 14,00 | −6,7 | +5,1 |
+| **v4_todo_sin_iso** | **10,14** | 0,14 | 49,4 | 10,63 | 15,28 | 14,54 | 13,90 | −6,6 | +9,8 |
+
+Lecturas: cada pieza suma por separado sobre v4_calle_norm (texto v3 −0,4 pp, target encoding −0,3 pp, TF-IDF −0,3 pp; la calle normalizada −0,1 pp sobre v3) y juntas bajan 0,9 pp respecto de v3_ppm2_huber. La calibración isotónica no cambia el error total: reduce el sesgo de los caros (+9,8 → +5,1 %) y mejora < 80k, pero empeora el error > 600k y ≥ 150 m². Se eligió **v4_todo_sin_iso** (mismo error total, más simple, mejor en caros, grandes y barrios débiles); `v4_todo` queda disponible.
+
+## 15. Resultado final (test agrupado, evaluación única) — corrida `20261016-171812-price`
+
+| modelo | MAPE test | dentro 10 % | R² log | MAE USD |
+|---|---:|---:|---:|---:|
+| Mediana USD/m² barrio × m² | 18,51 | 28,9 | 0,847 | 69.359 |
+| Ridge | 14,39 | 36,8 | 0,900 | 57.595 |
+| LightGBM v1 (iter. 1, mismo test) | 13,33 | 39,1 | 0,916 | 50.508 |
+| LightGBM v3_ppm2_huber (iter. 2) | 10,81 | 46,6 | 0,939 | 42.081 |
+| **LightGBM v4_todo_sin_iso (iter. 3)** | **9,88** | **50,7** | **0,948** | **38.988** |
+
+CV en train: 10,02 ± 0,17 %. Hiperparámetros por CV: num_leaves 127, min_child_samples 10, learning_rate 0,03, 2.546 árboles. Intervalo 80 % cubre 80,4 % del test; el 50 %, 50,9 %. Protocolo viejo (aleatorio con duplicados): 9,23 %.
+
+| segmento | n | iter. 2 | iter. 3 | sesgo iter. 2 → 3 |
+|---|---:|---:|---:|---:|
+| todos | 9.300 | 10,81 | 9,88 | −0,1 → −0,3 |
+| < USD 80k | 1.628 | 11,70 | 10,28 | −8,0 → −6,2 |
+| > USD 600k | 617 | 16,32 | 14,45 | +11,6 → +8,9 |
+| ≥ 150 m² | 1.011 | 14,51 | 13,92 | +1,8 → +0,1 |
+| barrios débiles | 307 | 17,18 | 14,82 | −5,4 → −4,0 |
+
+Peores barrios en test: Villa Lugano 18,9 % (sesgo −12,5 %), Constitución 17,9 %, Liniers 14,2 %. Variables más importantes (gain): target encoding calle+cuadra 20 %, calle 9 %, TE barrio×m² 8 %, barrio 7 %.
+
+## 16. Limitaciones que siguen
+
+- Regresión a la media atenuada pero presente (baratos −6 %, > USD 600k +9 %); la calibración isotónica la reduce más pero a costa de error en los caros.
+- Villa Lugano sigue cerca de 19 %, con sesgo fuerte: pocos avisos y muy heterogéneos.
+- El modelo depende mucho de la dirección: sin calle/altura (formulario sin dirección) la predicción usa sólo los priors de barrio y es menos precisa.
+- Pendiente: CatBoost/ensambles y búsqueda bayesiana de hiperparámetros.

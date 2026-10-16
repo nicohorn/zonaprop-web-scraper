@@ -107,9 +107,9 @@ tablas, gráficos, CSV) a la derecha; cada corrida queda en `data/ml/runs/<fecha
 **Train/test**: A usa un test fijo del 20 % **agrupado** (la misma unidad, aunque esté
 duplicada o republicada, nunca queda en train y en test), elige hiperparámetros con CV de 5 folds
 agrupados sobre train y evalúa una sola vez en test, contra baselines (mediana global, mediana
-USD/m² del barrio × m², Ridge). Resultado actual (iteración 2, variante `v3_ppm2_huber`,
-duplicados v2 validados): mediana de error 10,8 % en test (v1 en el mismo test: 13,3 %; barrio × m²: 18,5 %;
-Ridge: 14,4 %). La iteración 1 (13,7 %) y todas las variantes siguen en /modelos. Proceso completo, conteo de filas, métricas y limitaciones en
+USD/m² del barrio × m², Ridge). Resultado actual (iteración 3, variante `v4_todo_sin_iso`: calle normalizada, target encoding
+fuera de fold, TF-IDF+SVD y rasgos de texto v3): mediana de error 9,9 % en test (iteración 2: 10,8 %; v1 en el mismo
+test: 13,3 %; barrio × m²: 18,5 %; Ridge: 14,4 %). Todas las iteraciones y variantes siguen en /modelos. Proceso completo, conteo de filas, métricas y limitaciones en
 [`docs/modelo_precio.md`](docs/modelo_precio.md). E separa `aleatorio` o `temporal`.
 
 **Predecir precio**: cada corrida de A guarda el modelo (`model.joblib` + `model.json` con
