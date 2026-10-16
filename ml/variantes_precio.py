@@ -120,10 +120,15 @@ class ModeloGBM:
             from sklearn.decomposition import TruncatedSVD
             from sklearn.feature_extraction.text import TfidfVectorizer
             tf = TfidfVectorizer(ngram_range=(1, 2), min_df=5, max_features=40000, sublinear_tf=True)
-            A = tf.fit_transform(X[TEXTO].fillna("").astype(str))
-            sv = TruncatedSVD(N_SVD, random_state=self.seed).fit(A)
-            self.svd = (tf, sv)
-            X = pd.concat([X, pd.DataFrame(sv.transform(A), index=X.index, columns=[f"svd_{i}" for i in range(N_SVD)])], axis=1)
+            try:
+                A = tf.fit_transform(X[TEXTO].fillna("").astype(str))
+            except ValueError:   # vocabulario vac?o (datos muy chicos)
+                A = None
+            k = min(N_SVD, A.shape[1] - 1) if A is not None else 0
+            if k >= 1:
+                sv = TruncatedSVD(k, random_state=self.seed).fit(A)
+                self.svd = (tf, sv)
+                X = pd.concat([X, pd.DataFrame(sv.transform(A), index=X.index, columns=[f"svd_{i}" for i in range(k)])], axis=1)
         return X.drop(columns=[c for c in X.columns if c.startswith(CLAVE) or c == TEXTO])
 
     def _prep(self, X):
@@ -137,7 +142,7 @@ class ModeloGBM:
         if self.svd is not None:
             tf, sv = self.svd
             B = sv.transform(tf.transform(X[TEXTO].fillna("").astype(str) if TEXTO in X else [""] * len(X)))
-            X = pd.concat([X, pd.DataFrame(B, index=X.index, columns=[f"svd_{i}" for i in range(N_SVD)])], axis=1)
+            X = pd.concat([X, pd.DataFrame(B, index=X.index, columns=[f"svd_{i}" for i in range(B.shape[1])])], axis=1)
         return X.drop(columns=[c for c in X.columns if c.startswith(CLAVE) or c == TEXTO], errors="ignore")
 
     def predict(self, X, sup, calibrar=True):
