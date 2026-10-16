@@ -41,6 +41,7 @@ VARIANTES = {
     "v4_tfidf": {"features": 2, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "tfidf": True},
     "v4_iso": {"features": 2, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calibracion": "isotonica"},
     "v4_todo": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True, "calibracion": "isotonica"},
+    "v4_todo_sin_iso": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True},
 }
 CORTE_SEG, SOLAPE = 100, 20
 MIN_CALLE = 15
