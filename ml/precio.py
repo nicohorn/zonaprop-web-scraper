@@ -297,7 +297,7 @@ def resumen_cv(df_folds: pd.DataFrame) -> dict:
 
 
 GRILLA = {"num_leaves": [31, 63, 127], "min_child_samples": [10, 30], "learning_rate": [0.03], "reg_lambda": [0.0]}
-VARIANTE_DEFAULT = "v3_ppm2_huber"   # elegida por CV agrupado en la ablación (docs/modelo_precio.md)
+VARIANTE_DEFAULT = "v4_todo_sin_iso"   # iteraci?n 3, elegida por CV agrupado en la ablaci?n (antes v3_ppm2_huber)
 
 
 def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:

@@ -66,8 +66,8 @@
           "v4_todo",
           "v4_todo_sin_iso"
         ],
-        "default": "v3_ppm2_huber",
-        "label": "Variante de LightGBM (v1 = iteración anterior, 13,7 %; ver ablación)"
+        "default": "v4_todo_sin_iso",
+        "label": "Variante de LightGBM (v1 = iteraci?n 1, 13,7 %; v3_ppm2_huber = iteraci?n 2, 10,8 %; ver ablaci?n)"
       },
       "duplicados": {
         "type": "select",
