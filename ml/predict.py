@@ -103,7 +103,7 @@ def main():
         X, _, _ = zpml.build_features(df, version=version)
         if calle:
             import variantes_precio as vp
-            X = vp.agregar_calle(X, df)
+            X = vp.extender(X, df, opts)
         X = X.reindex(columns=columns)
         for c in cats:
             X[c] = pd.Categorical(X[c].astype(object), categories=lv[c])

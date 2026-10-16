@@ -366,6 +366,10 @@ def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
     lev_v = _niveles_var(Xv.iloc[tr], cats_v)
     Xvtr, Xvte = fijar_categorias(Xv.iloc[tr], cats_v, lev_v), fijar_categorias(Xv.iloc[te], cats_v, lev_v)
     gbm = vp.ModeloGBM(opts, params_lgb).fit(Xvtr, y[tr], sup[tr], n_por_seg=n_seg)
+    if opts.get("calibracion") == "isotonica":
+        # el calibrador se ajusta con las predicciones fuera de fold SIN calibrar del CV (train)
+        _, oof_crudo, _ = cv_variante(d, tr0, fl, {**opts, "calibracion": None}, params_lgb, trim)
+        gbm.calibrador = vp.ajustar_calibrador(oof_crudo, ytr0)
     preds = {k: np.exp(m.predict(Xte, sup[te])) for k, m in finales.items()}
     if p.get("referencia_v1", True) and nombre_var != "v1":
         # Referencia: la variante v1 (iteración anterior, 13,7 %) con sus hiperparámetros, mismo train/test.
@@ -448,8 +452,9 @@ def segmentos(precio_real, sup, barrio) -> dict[str, np.ndarray]:
 def matriz(d: pd.DataFrame, opts: dict):
     import variantes_precio as vp
     X, nums, cats = zpml.build_features(d, version=int(opts["features"]))
+    X = vp.extender(X, d, opts)
     if opts.get("calle"):
-        X = vp.agregar_calle(X, d); cats = cats + ["calle"]
+        cats = cats + ["calle"]
     return X, nums, cats
 
 
@@ -475,6 +480,9 @@ def cv_variante(d, tr0, fl, opts, params, trim=1.0):
         m = vp.ModeloGBM(opts, params).fit(Xa, y[a], sup[a], eval_set=(Xv, y[va], sup[va]))
         iters.append(m.best); oof[va] = m.predict(Xv, sup[va])
         res.append(metricas(np.exp(y[va]), np.exp(oof[va])))
+    if opts.get("calibracion") == "isotonica":   # corrección post-hoc con cross-fitting (sin mirar el fold que corrige)
+        oof = vp.calibrar_oof(oof, y, fl)
+        res = [metricas(np.exp(y[va]), np.exp(oof[va])) for _, va in fl]
     n_seg = {k: int(np.mean([it[k] for it in iters]) * 1.1) for k in iters[0]}
     return pd.DataFrame(res), oof, n_seg
 

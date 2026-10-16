@@ -57,7 +57,13 @@
           "v2_segmentos",
           "v3_ppm2_huber",
           "v3_ppm2_pesos",
-          "v3_ppm2_huber_pesos"
+          "v3_ppm2_huber_pesos",
+          "v4_calle_norm",
+          "v4_texto3",
+          "v4_te",
+          "v4_tfidf",
+          "v4_iso",
+          "v4_todo"
         ],
         "default": "v3_ppm2_huber",
         "label": "Variante de LightGBM (v1 = iteración anterior, 13,7 %; ver ablación)"
@@ -188,7 +194,13 @@
           "v2_segmentos",
           "v3_ppm2_huber",
           "v3_ppm2_pesos",
-          "v3_ppm2_huber_pesos"
+          "v3_ppm2_huber_pesos",
+          "v4_calle_norm",
+          "v4_texto3",
+          "v4_te",
+          "v4_tfidf",
+          "v4_iso",
+          "v4_todo"
         ],
         "default": [
           "v1",
@@ -201,7 +213,13 @@
           "v2_segmentos",
           "v3_ppm2_huber",
           "v3_ppm2_pesos",
-          "v3_ppm2_huber_pesos"
+          "v3_ppm2_huber_pesos",
+          "v4_calle_norm",
+          "v4_texto3",
+          "v4_te",
+          "v4_tfidf",
+          "v4_iso",
+          "v4_todo"
         ],
         "label": "Variantes a comparar"
       },

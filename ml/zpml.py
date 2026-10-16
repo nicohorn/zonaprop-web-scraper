@@ -192,6 +192,31 @@ def _first_num(rx, t, lo, hi):
     return v if lo <= v <= hi else np.nan
 
 
+# v3: más atributos (nunca montos). build_features(..., version=3)
+FLAGS_V3 = {
+    "piso_alto": r"piso alto|ultimo piso|pisos altos|alto con vista",
+    "piso_bajo": r"piso bajo|primer piso|1er piso",
+    "sin_expensas": r"sin expensas|bajas expensas|expensas bajas",
+    "a_estrenar_v3": r"a estrenar|estrenar|nuevo a estrenar",
+    "terraza_propia": r"terraza propia|terraza exclusiva|azotea propia",
+    "parrilla_propia": r"parrilla propia",
+    "pileta": r"pileta|piscina",
+    "gimnasio": r"gimnasio|\bgym\b",
+    "sum": r"\bsum\b|salon de usos",
+    "toilette": r"toilette",
+    "lavadero": r"lavadero",
+    "cocina_separada": r"cocina separada|cocina independiente",
+    "doble_circulacion": r"doble circulacion",
+    "esquina": r"\besquina\b",
+    "dueno_directo": r"dueno directo|duenio directo",
+    "oportunidad": r"oportunidad|urgente|liquido|retasado",
+    "escritura": r"escritura inmediata|escriturable",
+    "edificio_antiguo": r"edificio antiguo|antiguo|estilo|techos altos",
+    "humedad": r"humedad|a refaccionar|necesita arreglos",
+    "amoblado": r"amoblado|amueblado",
+}
+
+
 POZO = re.compile(r"\bpozo\b|pre ?-?venta|en construccion|avances? de obra|anticipo|entrega (?:en|estimada|prevista)|posesion (?:en|estimada|prevista)")
 
 
@@ -228,6 +253,10 @@ def build_features(df: pd.DataFrame, version: int = 1) -> tuple[pd.DataFrame, li
         X.loc[txt.str.contains(FLAGS_V2["planta_baja"]) & X["piso_txt"].isna(), "piso_txt"] = 0
         X["antiguedad_txt"] = txt.map(lambda t: _first_num(_ANT, t, 0, 150))
         X.loc[txt.str.contains(FLAGS["a_estrenar"]) & X["antiguedad_txt"].isna(), "antiguedad_txt"] = 0
+    if version >= 3:
+        for k, rx in FLAGS_V3.items():
+            X["kw_" + k] = txt.str.contains(rx).astype(int)
+        X["largo_texto"] = txt.str.len()
     cats = ["barrio", "tipo_prop"]
     for c in ["disposicion", "orientacion", "luminosidad"]:
         if c in df:
