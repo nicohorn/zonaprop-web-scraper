@@ -189,3 +189,80 @@ ml\.venv\Scripts\jupyter nbconvert --to notebook --execute --inplace notebooks\0
 Cada corrida deja en `data/ml/runs/<id>/`: `result.json`, `model.joblib`/`model.json`,
 `limpieza_pasos.csv`, `cv_grilla_lightgbm.csv`, `predicciones_test.csv`, `error_por_*.csv`,
 `importancia.csv` y los gráficos. La corrida tarda unos 6 minutos en una PC de escritorio.
+
+---
+
+# Iteración 2 (16/10/2026): duplicados validados, rasgos de texto y variantes
+
+Sin scraping nuevo: mismos 105.413 avisos. La iteración 1 (13,7 %, corrida `20261016-122915-price`) se conserva tal cual en la interfaz y en `data/ml/runs/`; la variante `v1` y la regla `v1_huella` siguen seleccionables.
+
+## 9. Validación de la regla de casi-duplicados
+
+Script: `ml/validar_duplicados.py` (salida en `data/ml/validacion_duplicados/`: `resumen.json`, `muestra_pares.csv`, `revision_manual.csv`).
+
+- Regla v1: misma *huella* (barrio + m² + ambientes + dormitorios + baños + precio redondeado). Sobre 47.882 avisos limpios hay 4.732 huellas repetidas que abarcan 11.493 avisos (11.192 pares); v1 quitaba **6.761**.
+- Señales en esos pares: misma calle + cuadra 33,3 %; título+descripción casi iguales (coseno de n-gramas ≥ 0,6) 5,6 %; misma inmobiliaria (`publisher`) sólo 5,1 % (la mayoría de los pares son de anunciantes distintos, por eso no se usa como condición).
+- Revisión manual de 40 pares al azar (semilla 0): 15 parecen el mismo departamento (misma dirección/edificio, mismo precio), 24 son unidades distintas que sólo coinciden en barrio, tamaño y precio, 1 dudoso. **Precisión estimada de v1 ≈ 38 %** (15/39).
+- Regla v2 (por defecto): misma huella **y** (misma calle+cuadra **o** texto casi igual). En la misma muestra marcó 13 pares y los 13 eran duplicados reales (precisión 13/13); se le escaparon 2 de 15 (calle escrita "Franklin D. Roosevelt" vs "Roosevelt"; altura "0").
+- **Antes / después: v1 quita 6.761 → v2 quita 2.253** (quedan 45.629 avisos en vez de 41.121). El test agrupado sigue usando la huella sin precio como grupo, así que sigue siendo estricto (0 grupos en train y test).
+
+La muestra es chica (40 pares): las precisiones son orientativas, no un intervalo.
+
+## 10. Variantes y ablación (CV 5 folds agrupados, sólo train)
+
+Rasgos nuevos del texto (`zpml.build_features(version=2)`, nunca montos): reciclado, a reciclar, luminoso, frente, contrafrente, cochera, dependencia, suite, vista, semipiso, dúplex, penthouse, torre, patio, baulera, apto profesional, seguridad, categoría/lujo, planta baja, estilo francés, impecable, `piso_txt` (número de piso) y `antiguedad_txt` (años). Además `calle` (primera palabra de la dirección, categorías con ≥ 15 avisos en train).
+
+Corrida `20261016-140544-price_ablation` (archivo `ablacion_cv.csv`). MAPE = mediana del error porcentual; sesgo negativo = el modelo sobreestima.
+
+| variante | target | pesos | objetivo | segm. | MAPE CV | ±std | dentro 10 % | < 80k | > 600k | ≥ 150 m² | barrios débiles | sesgo < 80k | sesgo > 600k |
+|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v1 (iter. 1) | log precio | — | L2 | no | 13,19 | 0,14 | 39,5 | 13,03 | 22,36 | 19,72 | 18,30 | −9,8 | +20,8 |
+| v2_texto | log precio | — | L2 | no | 12,11 | 0,21 | 42,2 | 11,96 | 20,45 | 18,17 | 16,71 | −8,7 | +16,6 |
+| v2_texto_calle | log precio | — | L2 | no | 11,42 | 0,18 | 44,7 | 11,80 | 18,26 | 16,46 | 15,63 | −8,2 | +13,6 |
+| v2_ppm2 | log USD/m² | — | L2 | no | 11,13 | 0,08 | 45,5 | 11,47 | 17,74 | 16,11 | 15,65 | −8,1 | +13,4 |
+| v2_pesos | log precio | balanceado | L2 | no | 11,43 | 0,16 | 44,6 | 11,42 | 18,09 | 16,21 | 15,19 | −7,7 | +13,9 |
+| v2_huber | log precio | — | Huber | no | 11,21 | 0,17 | 45,5 | 11,57 | 18,19 | 16,09 | 15,86 | −8,2 | +14,3 |
+| v2_l1 | log precio | — | L1 | no | 11,31 | 0,19 | 45,2 | 11,30 | 18,86 | 16,39 | 16,45 | −8,1 | +15,3 |
+| v2_segmentos | log precio | — | L2 | < / ≥ 100 m² | 11,40 | 0,10 | 44,8 | 11,88 | 19,01 | 16,77 | 16,08 | −8,3 | +14,6 |
+| **v3_ppm2_huber** | log USD/m² | — | Huber | no | **11,07** | 0,09 | 46,1 | 11,41 | 17,44 | 15,88 | 15,35 | −7,8 | +12,7 |
+| v3_ppm2_pesos | log USD/m² | balanceado | L2 | no | 11,25 | 0,07 | 45,5 | 11,20 | 17,39 | 16,17 | 15,63 | −7,6 | +13,0 |
+| v3_ppm2_huber_pesos | log USD/m² | balanceado | Huber | no | 11,04 | 0,10 | 46,1 | 11,10 | 17,26 | 15,96 | 15,55 | −7,4 | +12,3 |
+
+(Todas las variantes v2/v3 usan rasgos de texto v2 y `calle`, salvo `v2_texto`. Barrios débiles = Villa Lugano, Mataderos, Constitución.)
+
+Lecturas: lo que más ayuda son los rasgos de texto (−1,1 pp) y la calle (−0,7 pp); modelar log USD/m² y la pérdida Huber suman ~0,3 pp más. Pesos por rango de precio y modelos separados por tamaño casi no cambian el total. `v3_ppm2_huber_pesos` quedó 0,03 pp por debajo de `v3_ppm2_huber`, menos que un desvío entre folds; se eligió `v3_ppm2_huber` como default por ser más simple (sin pesos). Ambas quedan seleccionables.
+
+## 11. Resultado final (test agrupado, evaluación única) — corrida `20261016-143053-price`
+
+Regla de duplicados v2 → train 35.602 / test 9.300 (otro test que el de la iteración 1: no son cifras directamente comparables con el 13,7 %). Para comparar en igualdad de condiciones se reentrena v1 en el **mismo** train/test.
+
+| modelo | MAPE test | dentro 10 % | R² log | MAE USD |
+|---|---:|---:|---:|---:|
+| Mediana global | 47,50 | 10,6 | −0,02 | 148.644 |
+| Mediana USD/m² barrio × m² | 18,51 | 28,9 | 0,847 | 69.359 |
+| Ridge | 14,39 | 36,8 | 0,900 | 57.595 |
+| LightGBM v1 (referencia, mismo test) | 13,33 | 39,1 | 0,916 | 50.508 |
+| **LightGBM v3_ppm2_huber** | **10,81** | **46,6** | **0,939** | **42.081** |
+
+CV en train de la variante final: 10,97 ± 0,09 % (coincide con el test). Hiperparámetros por CV: num_leaves 127, min_child_samples 30, learning_rate 0,03, 1.712 árboles. Intervalo 80 % cubre 80,5 % del test; el 50 %, 50,4 %. Con el protocolo viejo (split aleatorio con duplicados) la misma variante da 10,28 %.
+
+Por segmento (test, MAPE / sesgo):
+
+| segmento | n | v1 ref | v3_ppm2_huber | sesgo v1 → v3 |
+|---|---:|---:|---:|---:|
+| todos | 9.300 | 13,33 | 10,81 | −0,5 → −0,1 |
+| < USD 80k | 1.628 | 13,55 | 11,70 | −10,3 → −8,0 |
+| > USD 600k | 617 | 21,17 | 16,32 | +18,7 → +11,6 |
+| ≥ 150 m² | 1.011 | 18,14 | 14,51 | +1,0 → +1,8 |
+| barrios débiles | 307 | 21,10 | 17,18 | −9,2 → −5,4 |
+
+Peores barrios en test: Villa Lugano 21,0 %, Constitución 18,3 %, La Boca 16,5 %, Liniers 15,8 %. Variables más importantes (gain): barrio 29 %, calle 15 %, amenities 10 %, expensas/m² 8 %.
+
+## 12. Limitaciones que siguen
+
+- Sigue la regresión a la media: los baratos se sobreestiman ~8 % y los > USD 600k se subestiman ~12 %.
+- Villa Lugano y Constitución siguen > 18 % de error: pocos avisos y mucha heterogeneidad.
+- Los rasgos de texto dependen de cómo escribe cada inmobiliaria (`piso_txt`/`antiguedad_txt` faltan en la mayoría de los avisos).
+- La regla v2 de duplicados se validó con 40 pares; normalizar nombres de calle (alias tipo "Franklin D. Roosevelt") recuperaría algunos duplicados que hoy se escapan.
+
+Reproducir: `python ml/run.py price_ablation --run-dir …` (o tarea "A2 · Ablación" en /modelos), luego la tarea A con `variante=v3_ppm2_huber`; `python ml/validar_duplicados.py 60` para la validación.
