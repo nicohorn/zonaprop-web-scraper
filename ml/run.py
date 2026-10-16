@@ -272,20 +272,60 @@ def task_anomaly(p):
     iso = IsolationForest(contamination=float(p["contamination"]), random_state=42).fit(F)
     d["anomalia"] = iso.predict(F) == -1
     d["score_anomalia"] = -iso.score_samples(F)
+    # Control de calidad de datos ANTES de rankear oportunidades
+    thr = float(p.get("umbral_barrio", 0.35))
+    ratio = d["ppm2"] / med
+    amb = pd.to_numeric(d["ambientes"], errors="coerce")
+    motivos = pd.DataFrame(index=d.index)
+    motivos[f"USD/m² < {thr:g}× mediana del barrio"] = ratio < thr
+    motivos["m² implausibles"] = (~d["sup"].between(18, 1500)) | (amb.notna() & (amb > 0) & (d["sup"] / amb.where(amb > 0) < 9))
+    # Precio en pesos cargado como USD: USD/m² absurdo o muy por encima del barrio
+    motivos["posible ARS cargado como USD"] = (d["ppm2"] > 25000) | (ratio > 6) | (d["price_x"] > 30_000_000)
+    motivos["precio implausiblemente bajo"] = d["price_x"] < 15000
+    d["error_datos"] = motivos.any(axis=1)
+    d["motivo_error"] = motivos.apply(lambda r: "; ".join(c for c, v in r.items() if v), axis=1)
     # Oportunidad = barato según el modelo Y contra su barrio
     d["score_oportunidad"] = -(d["residuo_%"] + d["ppm2_vs_barrio_%"]) / 2
     cols = ["id", "url", "barrio", "tipo_prop", "price_x", "sup", "ambientes", "ppm2", "ppm2_mediana_barrio", "ppm2_vs_barrio_%", "pred", "residuo_%", "anomalia", "score_anomalia", "score_oportunidad"]
-    deals = d.sort_values("score_oportunidad", ascending=False)[cols]
+    ok = d[~d["error_datos"]]
+    deals = ok.sort_values("score_oportunidad", ascending=False)[cols]
+    errores = d[d["error_datos"]].sort_values("score_oportunidad", ascending=False)[cols + ["motivo_error"]]
+    opps = deals[deals["score_oportunidad"] > 0]
     save_csv(deals, "oportunidades.csv")
-    save_csv(d[d["anomalia"]].sort_values("score_anomalia", ascending=False)[cols], "anomalias.csv")
+    save_csv(errores, "posibles_errores_de_datos.csv")
+    save_csv(d[d["anomalia"]].sort_values("score_anomalia", ascending=False)[cols + ["error_datos", "motivo_error"]], "anomalias.csv")
     plt = plt_()
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.hist(d["residuo_%"].clip(-80, 150), bins=80); ax.set_xlabel("Precio vs. predicción (%)"); ax.set_title("Residuos fuera de muestra")
     save_fig(fig, "residuos.png")
     n = int(p["top_n"])
-    return {"n": len(d), "anomalias": int(d["anomalia"].sum()), "metricas": {"Residuos": {"MAPE_mediana_%": float(np.median(np.abs(d["residuo_%"])))}},
-            "tablas": {"Oportunidades (más baratas que lo esperado)": table(deals.drop(columns=["score_anomalia"]), n),
-                       "Anomalías (IsolationForest)": table(d[d["anomalia"]].sort_values("score_anomalia", ascending=False)[cols], n)}}
+    anom = d["anomalia"]
+    return {"n": len(d), "anomalias": int(anom.sum()), "umbral_barrio": thr,
+            "posibles_errores_de_datos": int(d["error_datos"].sum()),
+            "anomalias_error_datos": int((anom & d["error_datos"]).sum()),
+            "anomalias_oportunidad": int((anom & ~d["error_datos"] & (d["score_oportunidad"] > 0)).sum()),
+            "errores_por_motivo": {c: int(motivos[c].sum()) for c in motivos.columns},
+            "metricas": {"Residuos": {"MAPE_mediana_%": float(np.median(np.abs(d["residuo_%"])))}},
+            "tablas": {"Posibles oportunidades (datos limpios, más baratas que lo esperado)": table(opps.drop(columns=["score_anomalia"]), n),
+                       "Posibles errores de datos": table(errores.drop(columns=["score_anomalia"]), n),
+                       "Anomalías (IsolationForest)": table(d[anom].sort_values("score_anomalia", ascending=False)[cols + ["motivo_error"]], n)}}
+
+
+def fetch_mep(manual=None, fallback=1450.0):
+    """Dólar MEP: valor manual si se pasa (>0); si no, dolarapi.com (venta de 'bolsa'); si falla, el fallback."""
+    if manual not in (None, "", 0, "0") and float(manual) > 0:
+        return float(manual), {"fuente": "manual", "valor": float(manual)}
+    url = "https://dolarapi.com/v1/dolares/bolsa"
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "zonapropscraper"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            j = json.loads(r.read().decode("utf-8"))
+        v = float(j["venta"])
+        return v, {"fuente": url, "valor": v, "compra": j.get("compra"), "fechaActualizacion": j.get("fechaActualizacion"),
+                   "consultado": datetime.now(timezone.utc).isoformat()}
+    except Exception as e:
+        return float(fallback), {"fuente": "fallback fijo", "valor": float(fallback), "error": f"{type(e).__name__}: {e}"}
 
 
 def task_yields(p):
@@ -294,7 +334,8 @@ def task_yields(p):
     as_of = p.get("as_of") or date.today().isoformat()
     if "scraped_at" in df:
         df = df[df["scraped_at"].astype(str).str[:10] <= as_of]
-    fx = float(p["fx_mep"])
+    fx, fx_info = fetch_mep(p.get("fx_mep"))
+    progress(10, f"Dólar MEP {fx:g} ({fx_info['fuente']})")
     if p["tipo"] != "todos":
         df = df[df["tipo_prop"] == p["tipo"]]
     df = df.assign(sup=zpml.superficie(df))
@@ -326,7 +367,7 @@ def task_yields(p):
     s = t[::-1]
     ax.barh(s["barrio"], s["rentabilidad_bruta_%"]); ax.set_xlabel("% bruto anual"); ax.set_title(f"Rentabilidad bruta (MEP {fx:g}, al {as_of})")
     save_fig(fig, "rentabilidad.png")
-    return {"as_of": as_of, "fx_mep": fx, "metricas": {"CABA": {"mediana_%": float(t["rentabilidad_bruta_%"].median()), "barrios": len(t)}},
+    return {"as_of": as_of, "fx_mep": fx, "fx_mep_info": fx_info, "metricas": {"CABA": {"mediana_%": float(t["rentabilidad_bruta_%"].median()), "barrios": len(t)}},
             "tablas": {"Rentabilidad por barrio": table(t, 60)}}
 
 
