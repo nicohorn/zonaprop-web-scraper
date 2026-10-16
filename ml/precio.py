@@ -338,7 +338,16 @@ def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
     nombre_var = p.get("variante", VARIANTE_DEFAULT)
     opts = vp.VARIANTES[nombre_var]
     Xv, nums_v, cats_v = matriz(d, opts)
-    grid = [dict(zip(GRILLA, v)) for v in itertools.product(*GRILLA.values())] if p.get("tune", True) else \
+    if p.get("hiperparametros") == "optuna":
+        import json as _json
+        f = zpml.DATA / "ml" / "optuna" / f"{nombre_var}.json"
+        if not f.exists():
+            raise SystemExit(f"No hay búsqueda Optuna guardada para {nombre_var} ({f}). Corré ml/optuna_precio.py primero.")
+        best_p = _json.loads(f.read_text(encoding="utf-8"))["mejores_parametros"]
+        grid = [{k: best_p[k] for k in GRILLA}]
+    else:
+        grid = None
+    grid = grid or [dict(zip(GRILLA, v)) for v in itertools.product(*GRILLA.values())] if p.get("tune", True) else \
         [{"num_leaves": int(p.get("num_leaves", 63)), "min_child_samples": 10, "learning_rate": float(p.get("learning_rate", 0.03)), "reg_lambda": 0.0}]
     tuning = []
     best_g = None
@@ -379,6 +388,19 @@ def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
         m1 = vp.ModeloGBM(vp.VARIANTES["v1"], PARAMS_V1).fit(fijar_categorias(X1.iloc[tr], c1, l1), y[tr], sup[tr], n_por_seg=n1)
         preds["LightGBM v1 (referencia)"] = np.exp(m1.predict(fijar_categorias(X1.iloc[te], c1, l1), sup[te]))
     preds["LightGBM"] = np.exp(gbm.predict(Xvte, sup[te]))
+    sin_dir = None
+    if (opts.get("calle") or opts.get("te")) and p.get("modelo_sin_direccion", True):
+        # Modelo de respaldo para el formulario cuando no se indica dirección: sin calle ni encodings de calle/cuadra.
+        progreso(80, "Modelo de respaldo sin dirección")
+        o_sd = {**opts, "calle": False, "sin_direccion": True}
+        Xs, nums_s, cats_s = matriz(d, o_sd); lev_s = _niveles_var(Xs.iloc[tr], cats_s)
+        r_sd, oof_sd, n_sd = cv_variante(d, tr0, fl, o_sd, params_lgb, trim)
+        cv["LightGBM sin dirección (respaldo)"] = r_sd
+        g_sd = vp.ModeloGBM(o_sd, params_lgb).fit(fijar_categorias(Xs.iloc[tr], cats_s, lev_s), y[tr], sup[tr], n_por_seg=n_sd)
+        preds["LightGBM sin dirección (respaldo)"] = np.exp(g_sd.predict(fijar_categorias(Xs.iloc[te], cats_s, lev_s), sup[te]))
+        res_sd = ytr0 - oof_sd
+        sin_dir = {"gbm": g_sd, "columns": list(Xs.columns), "nums": nums_s, "cats": cats_s, "levels": lev_s, "opciones": o_sd,
+                   "resid_log_quantiles": {f"q{int(a * 100)}": float(np.quantile(res_sd, a)) for a in [0.1, 0.25, 0.5, 0.75, 0.9]}}
     real = d["price_x"].values[te]
     test = {k: metricas(real, v) for k, v in preds.items()}
     seg_test = {k: tabla_segmentos(real, v, sup[te], d["barrio"].values[te]) for k, v in preds.items()}
@@ -395,7 +417,7 @@ def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
             "cv": {k: resumen_cv(v) for k, v in cv.items()}, "cv_folds": cv, "tuning": pd.DataFrame(tuning),
             "params_lgb": {**params_lgb, "n_estimators": n_seg}, "variante": nombre_var, "opciones": opts, "segmentos_test": seg_test,
             "levels_base": niveles(Xtr, base["cats_base"]), **base, "ridge_alpha": best_a, "test": test,
-            "cobertura": cobertura, "resid_log_quantiles": q, "gbm": gbm, "ridge": finales["Ridge"].m, "modelos": finales,
+            "cobertura": cobertura, "resid_log_quantiles": q, "gbm": gbm, "sin_direccion": sin_dir, "ridge": finales["Ridge"].m, "modelos": finales,
             "pred_test": out, "n_grupos_test": int(d["grupo"].iloc[te].nunique()),
             "grupos_compartidos": int(len(set(d["grupo"].values[tr]) & set(d["grupo"].values[te])))}
 
@@ -516,4 +538,4 @@ def ablacion(df: pd.DataFrame, p: dict, nombres=None, progreso=lambda pct, msg: 
                       "MAPE_mediana_%_std": r["MAPE_mediana_%"].std(),
                       **{f"MAPE {k}": v["MAPE_mediana_%"] for k, v in seg.items() if k != "todos"},
                       **{f"sesgo {k}": v["sesgo_mediano_%"] for k, v in seg.items() if k != "todos"}})
-    return {"d": d, "pasos": pasos, "tr0": tr0, "te": te, "tabla": pd.DataFrame(filas), "oofs": oofs}
+    return {"d": d, "pasos": pasos, "tr0": tr0, "te": te, "fl": fl, "tabla": pd.DataFrame(filas), "oofs": oofs}

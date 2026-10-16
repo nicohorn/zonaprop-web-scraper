@@ -112,18 +112,31 @@ def main():
                 X[c] = pd.to_numeric(X[c], errors="coerce").astype(float)
         return X
 
-    X = matriz(meta["columns"], meta["cats"], meta["nums"], levels, int(opts.get("features", 1)), bool(opts.get("calle")))
+    sd = meta.get("sin_direccion")
+    usa_respaldo = bool(sd) and bundle.get("gbm_sin_direccion") is not None and not str(x.get("direccion") or "").strip()
+    if usa_respaldo:
+        # Sin dirección: modelo de respaldo entrenado sin calle ni encodings de calle/cuadra (métricas propias en el test).
+        opts = sd["opciones"]
+        X = matriz(sd["columns"], sd["cats"], sd["nums"], sd["levels"], int(opts.get("features", 1)), True)
+        warn.append("Sin dirección: se usa el modelo de respaldo sin calle (menos preciso; ver su error en el test).")
+    else:
+        X = matriz(meta["columns"], meta["cats"], meta["nums"], levels, int(opts.get("features", 1)), bool(opts.get("calle")))
     if opts.get("calle") and row.get("address") and pd.isna(X["calle"].iloc[0]):
         warn.append("La calle no está entre las vistas en el entrenamiento (≥ 15 avisos): se ignora.")
     Xb = X if "columns_base" not in meta else matriz(meta["columns_base"], meta["cats_base"], meta["nums_base"], meta["levels_base"], 1)
-    raw = float(bundle["gbm"].predict(X, np.array([sup]))[0]) if "opciones" in meta else float(bundle["gbm"].predict(X)[0])
+    if usa_respaldo:
+        raw = float(bundle["gbm_sin_direccion"].predict(X, np.array([sup]))[0])
+    else:
+        raw = float(bundle["gbm"].predict(X, np.array([sup]))[0]) if "opciones" in meta else float(bundle["gbm"].predict(X)[0])
     Xr = Xb.astype({c: object for c in meta.get("cats_base", meta["cats"])})
     ridge_raw = float(bundle["ridge"].predict(Xr)[0])
     to_price = (lambda v: float(np.exp(v))) if meta["target"] == "log_price" else (lambda v: float(v * sup))
     price, ridge_price = to_price(raw), to_price(ridge_raw)
-    q = meta["resid_log_quantiles"]
+    q = sd["resid_log_quantiles"] if usa_respaldo else meta["resid_log_quantiles"]
     bmed = meta.get("barrio_ppm2_mediana", {}).get(barrio)
     gb = next((v for k, v in meta["metricas_test"].items() if not k.startswith("Ridge")), {})
+    if usa_respaldo:
+        gb = meta.get("metricas_test_todas", {}).get("LightGBM sin dirección (respaldo)", gb)
     print(json.dumps({
         "ok": True, "run": run, "modelo": meta["modelo"], "moneda": "USD" if meta["currency"] != "ARS" else "ARS",
         "operacion": meta["operacion"], "precio": round(price), "precio_m2": round(price / sup, 1), "superficie_usada": sup,
@@ -132,7 +145,7 @@ def main():
         "rango_50": [round(price * np.exp(q["q25"])), round(price * np.exp(q["q75"]))],
         "ridge_precio": round(ridge_price), "baseline_barrio_precio": round(bmed * sup) if bmed else None,
         "cobertura_test": meta.get("cobertura_test_%"), "error_test": gb, "n_train": meta["n_train"], "n_test": meta["n_test"],
-        "split": meta.get("split"), "avisos": warn, "inputs": x,
+        "split": meta.get("split"), "modelo_usado": "respaldo sin dirección" if usa_respaldo else "principal", "avisos": warn, "inputs": x,
     }, ensure_ascii=False, default=lambda o: o.item() if hasattr(o, "item") else str(o)))
 
 

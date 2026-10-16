@@ -64,7 +64,10 @@
           "v4_tfidf",
           "v4_iso",
           "v4_todo",
-          "v4_todo_sin_iso"
+          "v4_todo_sin_iso",
+          "v5_catboost",
+          "v5_pesos",
+          "v5_sin_direccion"
         ],
         "default": "v4_todo_sin_iso",
         "label": "Variante de LightGBM (v1 = iteraci?n 1, 13,7 %; v3_ppm2_huber = iteraci?n 2, 10,8 %; ver ablaci?n)"
@@ -173,6 +176,20 @@
         "type": "bool",
         "default": true,
         "label": "Entrenar también v1 como referencia en el mismo test"
+      },
+      "hiperparametros": {
+        "type": "select",
+        "options": [
+          "grilla",
+          "optuna"
+        ],
+        "default": "grilla",
+        "label": "Hiperpar?metros (grilla por CV o mejores de ml/optuna_precio.py)"
+      },
+      "modelo_sin_direccion": {
+        "type": "bool",
+        "default": true,
+        "label": "Entrenar tambi?n el modelo de respaldo sin direcci?n (formulario)"
       }
     },
     "question": "¿Cuánto debería valer este aviso?",
@@ -202,7 +219,10 @@
           "v4_tfidf",
           "v4_iso",
           "v4_todo",
-          "v4_todo_sin_iso"
+          "v4_todo_sin_iso",
+          "v5_catboost",
+          "v5_pesos",
+          "v5_sin_direccion"
         ],
         "default": [
           "v1",
@@ -222,7 +242,10 @@
           "v4_tfidf",
           "v4_iso",
           "v4_todo",
-          "v4_todo_sin_iso"
+          "v4_todo_sin_iso",
+          "v5_catboost",
+          "v5_pesos",
+          "v5_sin_direccion"
         ],
         "label": "Variantes a comparar"
       },

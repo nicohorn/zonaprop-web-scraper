@@ -43,6 +43,12 @@ VARIANTES = {
     "v4_todo": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True, "calibracion": "isotonica"},
     "v4_todo_sin_iso": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True},
 }
+VARIANTES.update({
+    # Iteración 4 (parten de v4_todo_sin_iso)
+    "v5_catboost": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True, "catboost": 1.0},
+    "v5_pesos": {"features": 3, "calle": True, "target": "log_ppm2", "pesos": "balanceado", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True},
+    "v5_sin_direccion": {"features": 3, "calle": False, "target": "log_ppm2", "pesos": "ninguno", "objetivo": "huber", "segmentos": False, "calle_norm": True, "te": True, "tfidf": True, "sin_direccion": True},
+})
 CORTE_SEG, SOLAPE = 100, 20
 MIN_CALLE = 15
 
@@ -66,6 +72,19 @@ class ModeloGBM:
                                  min_child_samples=self.p["min_child_samples"], reg_lambda=self.p.get("reg_lambda", 0.0),
                                  subsample=0.8, subsample_freq=1, colsample_bytree=0.8, cat_smooth=10, verbose=-1,
                                  random_state=self.seed, **extra)
+
+    def _cb(self, n):
+        from catboost import CatBoostRegressor
+        # RMSE sobre el target centrado: con Huber CatBoost arranca de 0 y converge muy lento (probado: 40 % de error)
+        return CatBoostRegressor(loss_function="RMSE", eval_metric="MAE", iterations=n, learning_rate=0.1, depth=6,
+                                 random_seed=self.seed, verbose=False, thread_count=-1, allow_writing_files=False)
+
+    def _cb_X(self, X):
+        X = X.copy()
+        for c in X.columns:
+            if isinstance(X[c].dtype, pd.CategoricalDtype) or X[c].dtype == object:
+                X[c] = X[c].astype(object).where(X[c].notna(), "nan").astype(str)
+        return X
 
     def _y(self, y, sup):
         return y - np.log(sup) if self.o["target"] == "log_ppm2" else y
@@ -97,6 +116,19 @@ class ModeloGBM:
                 mdl = self._lgbm(int(n_por_seg[k])).fit(X[m], self._y(y[m], sup[m]), sample_weight=w_all[m])
                 self.best[k] = int(n_por_seg[k])
             self.models[k] = mdl
+            w_cb = float(self.o.get("catboost", 0) or 0)
+            if w_cb > 0:
+                Xc = self._cb_X(X[m]); cats = [c for c in Xc.columns if Xc[c].dtype == object]
+                self.cb_off = getattr(self, "cb_off", {}); self.cb_off[k] = float(np.median(self._y(y[m], sup[m])))
+                off = self.cb_off[k]
+                if eval_set is not None:
+                    cb = self._cb(3000).fit(Xc, self._y(y[m], sup[m]) - off, sample_weight=w_all[m], cat_features=cats,
+                                            eval_set=(self._cb_X(Xva[mv]), self._y(yva[mv], supva[mv]) - off), early_stopping_rounds=100)
+                    self.best[k + "_cb"] = int(cb.get_best_iteration() or 1) + 1
+                else:
+                    cb = self._cb(int(n_por_seg[k + "_cb"])).fit(Xc, self._y(y[m], sup[m]) - off, sample_weight=w_all[m], cat_features=cats)
+                    self.best[k + "_cb"] = int(n_por_seg[k + "_cb"])
+                self.cb_models = getattr(self, "cb_models", {}); self.cb_models[k] = cb
         return self
 
     def _prep_fit(self, X, y, sup):
@@ -151,7 +183,11 @@ class ModeloGBM:
         for k, m in self._segs(np.asarray(sup, float)).items():
             if m.any():
                 mdl = self.models[k]
-                out[m] = mdl.predict(X[m], num_iteration=self.best.get(k))
+                p_lgb = mdl.predict(X[m], num_iteration=self.best.get(k))
+                w_cb = float(self.o.get("catboost", 0) or 0)
+                if w_cb > 0 and k in getattr(self, "cb_models", {}):
+                    p_lgb = (1 - w_cb) * p_lgb + w_cb * (self.cb_models[k].predict(self._cb_X(X[m])) + self.cb_off[k])
+                out[m] = p_lgb
         out = out + np.log(np.asarray(sup, float)) if self.o["target"] == "log_ppm2" else out
         if calibrar and getattr(self, "calibrador", None) is not None:
             out = self.calibrador.predict(out)
@@ -222,8 +258,9 @@ def extender(X: pd.DataFrame, d: pd.DataFrame, opts: dict) -> pd.DataFrame:
     if opts.get("te"):
         cn = addr.map(calle_norm)
         cu = addr.map(cuadra)
-        X[CLAVE + "calle"] = cn
-        X[CLAVE + "cuadra"] = [f"{a}|{b}" if a and b else None for a, b in zip(cn, cu)]
+        if not opts.get("sin_direccion"):
+            X[CLAVE + "calle"] = cn
+            X[CLAVE + "cuadra"] = [f"{a}|{b}" if a and b else None for a, b in zip(cn, cu)]
         bar = d["barrio"].astype(str)
         amb = zpml.num_col(d, "ambientes")
         X[CLAVE + "barrio_amb"] = [f"{b}|{int(a)}" if pd.notna(a) else None for b, a in zip(bar, amb)]
@@ -248,3 +285,26 @@ def calibrar_oof(oof, y, fl):
 def ajustar_calibrador(oof, y):
     from sklearn.isotonic import IsotonicRegression
     return IsotonicRegression(out_of_bounds="clip").fit(oof, y)
+
+
+def mezcla_oof(oof_a, oof_b, y, fl, pesos=np.round(np.arange(0, 1.01, 0.1), 2)):
+    """Peso de B en la mezcla elegido con cross-fitting: para cada fold, el peso que minimiza la mediana del
+    error en los OTROS folds. Devuelve (oof mezclado, pesos elegidos por fold, tabla peso→MAPE OOF)."""
+    def mape(a, b):
+        return float(np.median(np.abs(np.exp(a) / np.exp(b) - 1)) * 100)
+    out, elegidos = oof_a.copy(), []
+    for _, va in fl:
+        m = np.ones(len(y), bool); m[va] = False
+        w = min(pesos, key=lambda w: mape((1 - w) * oof_a[m] + w * oof_b[m], y[m]))
+        out[va] = (1 - w) * oof_a[va] + w * oof_b[va]; elegidos.append(float(w))
+    tabla = pd.DataFrame({"peso_catboost": pesos, "MAPE_OOF_%": [mape((1 - w) * oof_a + w * oof_b, y) for w in pesos]})
+    return out, elegidos, tabla
+
+
+def grupo_shap(c: str) -> str:
+    """Agrupa columnas internas para el gráfico SHAP."""
+    if c.startswith("svd_"):
+        return "texto (TF-IDF+SVD)"
+    if c.startswith("n_"):
+        return "conteo " + c[2:]
+    return c

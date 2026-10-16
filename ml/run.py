@@ -189,9 +189,23 @@ def task_price(p):
     if p.get("shap") and have("shap"):
         try:
             import shap
+            import variantes_precio as vp
             sample = Xte.sample(min(1000, len(Xte)), random_state=0)
-            shap.summary_plot(shap.TreeExplainer(next(iter(gbm_.models.values()))).shap_values(sample), sample, show=False, max_display=20)
+            # Matriz interna del modelo (target encodings + componentes de texto); las columnas clave/texto crudo no entran.
+            Xs = gbm_._prep(sample) if hasattr(gbm_, "_prep") else sample
+            mdl = next(iter(gbm_.models.values())) if hasattr(gbm_, "models") else gbm_
+            Xs = Xs[mdl.feature_name_]
+            sv = pd.DataFrame(shap.TreeExplainer(mdl).shap_values(Xs), columns=Xs.columns, index=Xs.index)
+            grupos = {c: vp.grupo_shap(c) for c in Xs.columns}
+            svg = sv.T.groupby(grupos).sum().T                      # SHAP es aditivo: se suman dentro de cada grupo
+            Xg = pd.DataFrame({g: (Xs[g] if g in Xs.columns else np.nan) for g in svg.columns}, index=Xs.index)
+            for c in Xg.columns:
+                if isinstance(Xg[c].dtype, pd.CategoricalDtype):
+                    Xg[c] = Xg[c].cat.codes.where(Xg[c].notna(), np.nan).astype(float)
+            Xg = Xg.apply(pd.to_numeric, errors="coerce")
+            shap.summary_plot(svg.values, Xg, show=False, max_display=20)
             save_fig(plt.gcf(), "shap_summary.png")
+            save_csv(svg.abs().mean().sort_values(ascending=False).rename("shap_abs_medio").reset_index().rename(columns={"index": "grupo"}), "shap_agrupado.csv")
         except Exception as e:  # SHAP es un extra: no voltea la corrida
             progress(88, f"SHAP falló: {e}")
     errs = precio.analisis_errores(out)
@@ -226,7 +240,10 @@ def task_price(p):
         "resid_log_quantiles": r["resid_log_quantiles"], "intervalo": "cuantiles de residuos fuera de fold (CV en train)",
         "usa_superficie_cubierta": "superficie_cubierta" in X.columns, "predictable": True,
     }
-    joblib.dump({"gbm": gbm_, "ridge": r["ridge"], "meta": meta}, RUN / "model.joblib")
+    sd = r.get("sin_direccion")
+    if sd:
+        meta["sin_direccion"] = {k: v for k, v in sd.items() if k != "gbm"}
+    joblib.dump({"gbm": gbm_, "ridge": r["ridge"], "meta": meta, "gbm_sin_direccion": sd["gbm"] if sd else None}, RUN / "model.joblib")
     (RUN / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1, default=_py), encoding="utf-8")
     ARTIFACTS.append("model.json")
     (RUN.parent.parent / "latest_price.json").write_text(json.dumps({"run": RUN.name}), encoding="utf-8")
@@ -499,8 +516,23 @@ def task_price_ablation(p):
     ax.set_ylabel("mediana del error % (CV)"); ax.set_title("Ablación (CV agrupado en train)")
     save_fig(fig, "ablacion.png")
     best = tab.sort_values("MAPE_mediana_%_media").iloc[0]["variante"]
+    y0 = np.log(a["d"]["price_x"].values[a["tr0"]])
+    np.savez_compressed(RUN / "oof.npz", y=y0, **{k: v for k, v in a["oofs"].items()})
+    tablas = {"Ablación (CV 5 folds agrupados, train)": table(tab.round(3), 40), "Limpieza": table(pd.DataFrame(a["pasos"]))}
+    mezcla = None
+    base_m, otro_m = p.get("mezcla_base", "v4_todo_sin_iso"), p.get("mezcla_otro", "v5_catboost")
+    if base_m in a["oofs"] and otro_m in a["oofs"]:
+        import variantes_precio as vp
+        mz, pesos, tw = vp.mezcla_oof(a["oofs"][base_m], a["oofs"][otro_m], y0, a["fl"])
+        res = [precio.metricas(np.exp(y0[va]), np.exp(mz[va])) for _, va in a["fl"]]
+        mezcla = {"base": base_m, "otro": otro_m, "pesos_por_fold": pesos,
+                  "MAPE_mediana_%_media": float(np.mean([x["MAPE_mediana_%"] for x in res])),
+                  "MAPE_mediana_%_std": float(np.std([x["MAPE_mediana_%"] for x in res], ddof=1)),
+                  "segmentos": precio.tabla_segmentos(np.exp(y0), np.exp(mz), a["d"]["sup"].values[a["tr0"]], a["d"]["barrio"].values[a["tr0"]])}
+        save_csv(tw, "mezcla_pesos.csv")
+        tablas[f"Mezcla {base_m} + {otro_m} (OOF, peso elegido con cross-fitting)"] = table(tw.round(3))
     return {"n_train": int(len(a["tr0"])), "mejor_variante_cv": best, "nota": "Sólo CV sobre train; el test no se usa acá.",
-            "tablas": {"Ablación (CV 5 folds agrupados, train)": table(tab.round(3), 40), "Limpieza": table(pd.DataFrame(a["pasos"]))}}
+            "mezcla": mezcla, "tablas": tablas}
 
 
 TASK_FUNCS = {"price": task_price, "price_ablation": task_price_ablation, "anomaly": task_anomaly, "yields": task_yields, "segments": task_segments,
