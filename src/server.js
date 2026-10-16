@@ -174,6 +174,10 @@ const routes = {
   },
   'GET /api/ml/price-models': (req, res) => json(res, 200, ml.priceModels()),
   'GET /api/ml/compare': (req, res) => json(res, 200, ml.compare()),
+  'GET /api/ml/historial': (req, res) => {
+    const p = join(ROOT, 'docs', 'historial_modelo_precio.md');
+    json(res, 200, { name: 'docs/historial_modelo_precio.md', markdown: existsSync(p) ? readFileSync(p, 'utf8') : '' });
+  },
   'GET /api/ml/doc': (req, res) => {
     const p = join(ROOT, 'docs', 'modelo_precio.md');
     json(res, 200, { name: 'docs/modelo_precio.md', markdown: existsSync(p) ? readFileSync(p, 'utf8') : '' });

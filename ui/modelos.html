@@ -149,9 +149,11 @@
   <nav class="views" id="views">
     <button class="tab" data-v="result" aria-selected="true">Resultado</button>
     <button class="tab" data-v="compare" aria-selected="false">Comparar corridas y variantes</button>
+    <button class="tab" data-v="hist" aria-selected="false">Historial del modelo A</button>
     <button class="tab" data-v="doc" aria-selected="false">Documentación del modelo A</button>
   </nav>
   <section id="compare" hidden><h2>Comparar corridas</h2><p class="hint">Cargando…</p></section>
+  <section id="hist" hidden class="md"><p class="hint">Cargando.</p></section>
   <section id="doc" hidden class="md"><p class="hint">Cargando…</p></section>
   <section id="result">
     <h2>Resultado</h2>
@@ -328,9 +330,10 @@ loadPriceModels();
 // --- Vistas: resultado / comparar / documentación -----------------------------------------
 function setView(v) {
   for (const b of document.querySelectorAll('#views .tab')) b.setAttribute('aria-selected', String(b.dataset.v === v));
-  for (const id of ['result', 'compare', 'doc']) $('#' + id).hidden = id !== v;
+  for (const id of ['result', 'compare', 'hist', 'doc']) $('#' + id).hidden = id !== v;
   if (v === 'compare') loadCompare();
   if (v === 'doc') loadDoc();
+  if (v === 'hist') loadHist();
 }
 document.querySelectorAll('#views .tab').forEach((b) => b.onclick = () => setView(b.dataset.v));
 const _showRun = showRun;
@@ -384,6 +387,10 @@ function md(src) {
     h += `<p>${inl(p.join(' '))}</p>`;
   }
   return h;
+}
+async function loadHist() {
+  const d = await api('/api/ml/historial');
+  $('#hist').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)} ? orden cronol?gico; cada corrida sigue disponible en ?Comparar corridas?</p>` + md(d.markdown) : '<p class="err">No se encontr? docs/historial_modelo_precio.md</p>';
 }
 async function loadDoc() {
   const d = await api('/api/ml/doc');
