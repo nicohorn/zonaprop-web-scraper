@@ -84,9 +84,60 @@ def limpiar(df: pd.DataFrame, operacion="venta", currency="USD", tipo="departame
     d["huella"] = huella(d, con_precio=True)
     d["grupo"] = huella(d, con_precio=False)
     d = d.sort_values(["date_posted", "scraped_at"], na_position="first")
-    if deduplicar:
-        n = len(d); d = d.drop_duplicates("huella", keep="last"); _paso(pasos, "Sin casi-duplicados (barrio + m² + ambientes + dormitorios + baños + precio redondeado)", d, n)
+    if deduplicar == "huella":   # regla v1 (13,7 %): sólo la huella; ~30 % de precisión en la muestra revisada
+        n = len(d); d = d.drop_duplicates("huella", keep="last"); _paso(pasos, "Sin casi-duplicados v1 (sólo huella)", d, n)
+    elif deduplicar:
+        d["dup_id"] = dup_ids(d)
+        n = len(d); d = d.drop_duplicates("dup_id", keep="last")
+        _paso(pasos, "Sin duplicados (misma huella Y misma calle/altura o texto casi igual)", d, n)
     return d.sort_index(), pasos
+
+
+_STOP = {"av", "avda", "avenida", "al", "calle", "de", "del", "la", "el", "los", "las", "y", "e", "entre", "gral", "general",
+         "teniente", "pasaje", "pje", "dr", "virrey", "piso", "venta", "departamento", "depto", "nro", "n"}
+
+
+def clave_direccion(a) -> str | None:
+    """'Av. Rivadavia al 10700' -> 'rivadavia|107' (primera palabra de la calle + cuadra)."""
+    a = re.sub(r"[^a-z0-9 ]", " ", zpml.norm(a))
+    m = re.search(r"\b(\d{2,5})\b", a)
+    toks = [t for t in a.split() if not t.isdigit() and t not in _STOP and len(t) > 1]
+    if not toks or not m:
+        return None
+    return f"{toks[0]}|{int(m.group(1)) // 100}"
+
+
+def dup_ids(d: pd.DataFrame, umbral_texto=0.6) -> pd.Series:
+    """Duplicado = misma huella (barrio, m², ambientes, dormitorios, baños, precio ±2 %) Y además
+    misma calle+cuadra o título+descripción casi iguales (coseno de n-gramas de caracteres ≥ 0,6).
+    Validado a mano sobre muestras de pares: ver docs/modelo_precio.md."""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    ids = pd.Series(np.arange(len(d)), index=d.index)
+    multi = d[d.duplicated("huella", keep=False)]
+    if multi.empty:
+        return ids
+    txt = (zpml._text_col(multi, "title") + " " + zpml._text_col(multi, "description_short")).map(zpml.norm).map(zpml.strip_amounts).str[:300]
+    T = TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=2).fit_transform(txt)
+    key = multi["address"].map(clave_direccion) if "address" in multi else pd.Series(None, index=multi.index)
+    pos = {ix: i for i, ix in enumerate(multi.index)}
+    parent = {ix: ix for ix in multi.index}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]; x = parent[x]
+        return x
+    for _, g in multi.groupby("huella"):
+        ix = list(g.index)
+        S = (T[[pos[i] for i in ix]] @ T[[pos[i] for i in ix]].T).toarray()
+        for a in range(len(ix)):
+            for b in range(a + 1, len(ix)):
+                ka, kb = key[ix[a]], key[ix[b]]
+                if (ka is not None and ka == kb) or S[a, b] >= umbral_texto:
+                    parent[find(ix[a])] = find(ix[b])
+    root = {ix: find(ix) for ix in multi.index}
+    for ix, rt in root.items():
+        ids[ix] = ids[rt]
+    return ids
 
 
 def huella(d: pd.DataFrame, con_precio: bool) -> pd.Series:
@@ -245,13 +296,15 @@ def resumen_cv(df_folds: pd.DataFrame) -> dict:
     return {f"{k}_media": float(df_folds[k].mean()) for k in df_folds} | {f"{k}_std": float(df_folds[k].std()) for k in df_folds}
 
 
-GRILLA = {"num_leaves": [31, 63, 127], "min_child_samples": [10, 30], "learning_rate": [0.03], "reg_lambda": [0.0, 5.0]}
+GRILLA = {"num_leaves": [31, 63, 127], "min_child_samples": [10, 30], "learning_rate": [0.03], "reg_lambda": [0.0]}
+VARIANTE_DEFAULT = "v3_ppm2_huber"   # elegida por CV agrupado en la ablación (docs/modelo_precio.md)
 
 
 def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
     """Pipeline completo. Devuelve dict con datos, modelos, métricas CV y test, tablas de error."""
+    dedup = "huella" if p.get("duplicados") == "v1_huella" else True
     d, pasos = limpiar(df, p.get("operacion", "venta"), p.get("currency", "USD"), p.get("tipo", "departamento"),
-                       float(p.get("fx_mep", 1450)), bool(p.get("excluir_pozo", True)))
+                       float(p.get("fx_mep", 1450)), bool(p.get("excluir_pozo", True)), deduplicar=dedup)
     if len(d) < 60:
         raise SystemExit(f"Hay {len(d)} avisos limpios; hacen falta al menos 60.")
     d = d.reset_index(drop=True)
@@ -280,48 +333,64 @@ def entrenar(df: pd.DataFrame, p: dict, progreso=lambda pct, msg: None) -> dict:
         if r["MAPE_mediana_%"].mean() < best:
             best, best_a, cv["Ridge"], oofs["Ridge"] = r["MAPE_mediana_%"].mean(), a, r, o
 
-    # Grilla de LightGBM por CV con early stopping
+    # Grilla de LightGBM (variante elegida) por CV con early stopping
+    import variantes_precio as vp
+    nombre_var = p.get("variante", VARIANTE_DEFAULT)
+    opts = vp.VARIANTES[nombre_var]
+    Xv, nums_v, cats_v = matriz(d, opts)
     grid = [dict(zip(GRILLA, v)) for v in itertools.product(*GRILLA.values())] if p.get("tune", True) else \
-        [{"num_leaves": int(p.get("num_leaves", 63)), "min_child_samples": 20, "learning_rate": float(p.get("learning_rate", 0.05)), "reg_lambda": 1.0}]
+        [{"num_leaves": int(p.get("num_leaves", 63)), "min_child_samples": 10, "learning_rate": float(p.get("learning_rate", 0.03)), "reg_lambda": 0.0}]
     tuning = []
     best_g = None
     for i, g in enumerate(grid):
-        progreso(30 + 40 * i / len(grid), f"CV LightGBM {i + 1}/{len(grid)}: {g}")
-        r, o, it = cv_modelo(None, Xtr0, ytr0, suptr0, ppm2tr0, fl, trim, lgb_params=g)
-        row = {**g, "n_arboles_medio": int(np.mean(it)), **resumen_cv(r)}
+        progreso(30 + 40 * i / len(grid), f"CV LightGBM {nombre_var} {i + 1}/{len(grid)}: {g}")
+        r, o, nseg = cv_variante(d, tr0, fl, opts, g, trim)
+        row = {**g, "n_arboles": str(nseg), **resumen_cv(r)}
         tuning.append(row)
         if best_g is None or row["MAPE_mediana_%_media"] < best_g[0]["MAPE_mediana_%_media"]:
-            best_g = (row, r, o, it)
-    g_row, cv["LightGBM"], oofs["LightGBM"], it = best_g
+            best_g = (row, r, o, nseg)
+    g_row, cv["LightGBM"], oofs["LightGBM"], n_seg = best_g
     params_lgb = {k: g_row[k] for k in GRILLA}
-    n_arb = int(np.mean(it) * 1.1)  # train final con todos los folds: ~10 % más de datos
 
     # Intervalo: cuantiles de los residuos fuera de fold (train), luego se mide su cobertura en test
     res_oof = ytr0 - oofs["LightGBM"]
     q = {f"q{int(a * 100)}": float(np.quantile(res_oof, a)) for a in [0.1, 0.25, 0.5, 0.75, 0.9]}
 
     # Ajuste final sobre todo train (recortado) y evaluación única en test
-    progreso(75, f"Modelo final: {n_arb} árboles")
+    progreso(75, f"Modelo final: {n_seg} árboles")
     lev = niveles(X.iloc[tr], cats)
     Xtr, Xte = fijar_categorias(X.iloc[tr], cats, lev), fijar_categorias(X.iloc[te], cats, lev)
     finales = {"Mediana global": MedianaGlobal().fit(Xtr, y[tr]),
                "Mediana USD/m² del barrio × m²": MedianaBarrio().fit(Xtr, y[tr], sup[tr]),
                "Ridge": RidgeLog(nums, cats, best_a).fit(Xtr, y[tr])}
-    gbm = lgbm(params_lgb, n_arb).fit(Xtr, y[tr])
+    lev_v = _niveles_var(Xv.iloc[tr], cats_v)
+    Xvtr, Xvte = fijar_categorias(Xv.iloc[tr], cats_v, lev_v), fijar_categorias(Xv.iloc[te], cats_v, lev_v)
+    gbm = vp.ModeloGBM(opts, params_lgb).fit(Xvtr, y[tr], sup[tr], n_por_seg=n_seg)
     preds = {k: np.exp(m.predict(Xte, sup[te])) for k, m in finales.items()}
-    preds["LightGBM"] = np.exp(gbm.predict(Xte))
+    if p.get("referencia_v1", True) and nombre_var != "v1":
+        # Referencia: la variante v1 (iteración anterior, 13,7 %) con sus hiperparámetros, mismo train/test.
+        X1, _, c1 = matriz(d, vp.VARIANTES["v1"]); l1 = _niveles_var(X1.iloc[tr], c1)
+        r1, _, n1 = cv_variante(d, tr0, fl, vp.VARIANTES["v1"], PARAMS_V1, trim)
+        cv["LightGBM v1 (referencia)"] = r1
+        m1 = vp.ModeloGBM(vp.VARIANTES["v1"], PARAMS_V1).fit(fijar_categorias(X1.iloc[tr], c1, l1), y[tr], sup[tr], n_por_seg=n1)
+        preds["LightGBM v1 (referencia)"] = np.exp(m1.predict(fijar_categorias(X1.iloc[te], c1, l1), sup[te]))
+    preds["LightGBM"] = np.exp(gbm.predict(Xvte, sup[te]))
     real = d["price_x"].values[te]
     test = {k: metricas(real, v) for k, v in preds.items()}
+    seg_test = {k: tabla_segmentos(real, v, sup[te], d["barrio"].values[te]) for k, v in preds.items()}
     r_te = np.log(real / preds["LightGBM"])
     cobertura = {"80%": float(np.mean((r_te >= q["q10"]) & (r_te <= q["q90"])) * 100),
                  "50%": float(np.mean((r_te >= q["q25"]) & (r_te <= q["q75"])) * 100)}
+    base = {"nums_base": nums, "cats_base": cats, "columns_base": list(X.columns)}
+    X, nums, cats, lev = Xv, nums_v, cats_v, lev_v   # lo que se guarda para predecir es la variante
 
     out = d.iloc[te][["id", "url", "barrio", "price_x", "sup", "ambientes", "dormitorios", "banos", "date_posted"]].copy()
     out["pred"] = preds["LightGBM"]; out["residuo_%"] = (out["price_x"] / out["pred"] - 1) * 100
     out["ape_%"] = (out["pred"] - out["price_x"]).abs() / out["price_x"] * 100
     return {"d": d, "pasos": pasos, "X": X, "nums": nums, "cats": cats, "levels": lev, "tr": tr, "te": te, "tr0": tr0,
             "cv": {k: resumen_cv(v) for k, v in cv.items()}, "cv_folds": cv, "tuning": pd.DataFrame(tuning),
-            "params_lgb": {**params_lgb, "n_estimators": n_arb}, "ridge_alpha": best_a, "test": test,
+            "params_lgb": {**params_lgb, "n_estimators": n_seg}, "variante": nombre_var, "opciones": opts, "segmentos_test": seg_test,
+            "levels_base": niveles(Xtr, base["cats_base"]), **base, "ridge_alpha": best_a, "test": test,
             "cobertura": cobertura, "resid_log_quantiles": q, "gbm": gbm, "ridge": finales["Ridge"].m, "modelos": finales,
             "pred_test": out, "n_grupos_test": int(d["grupo"].iloc[te].nunique()),
             "grupos_compartidos": int(len(set(d["grupo"].values[tr]) & set(d["grupo"].values[te])))}
@@ -343,19 +412,100 @@ def analisis_errores(out: pd.DataFrame) -> dict[str, pd.DataFrame]:
             "superficie_m2": error_por(out, tam, 1), "precio_usd": error_por(out, pr, 1)}
 
 
-def comparar_aleatorio(df: pd.DataFrame, p: dict, params_lgb: dict) -> dict:
-    """Protocolo anterior: sin quitar casi-duplicados y con split aleatorio, mismos hiperparámetros.
+def comparar_aleatorio(df: pd.DataFrame, p: dict, params_lgb: dict, variante: str = "v1") -> dict:
+    """Protocolo anterior: sin quitar duplicados y con split aleatorio, mismos hiperparámetros y variante.
     Sirve para ver cuánto del error "bajo" venía de tener la misma propiedad en train y test."""
+    import variantes_precio as vp
     d, _ = limpiar(df, p.get("operacion", "venta"), p.get("currency", "USD"), p.get("tipo", "departamento"),
                    float(p.get("fx_mep", 1450)), bool(p.get("excluir_pozo", True)), deduplicar=False)
     d = d.reset_index(drop=True)
-    X, nums, cats = zpml.build_features(d)
-    y = np.log(d["price_x"].values)
+    opts = vp.VARIANTES[variante]
+    X, nums, cats = matriz(d, opts)
+    y = np.log(d["price_x"].values); sup = d["sup"].values
     tr, te = separar(d, "aleatorio", float(p.get("test_size", 0.2)), int(p.get("seed", 42)))
     tr = tr[recorte_train(d["ppm2"].values[tr], float(p.get("trim_pct", 1.0)))]
-    lev = niveles(X.iloc[tr], cats)
-    m = lgbm({k: v for k, v in params_lgb.items() if k != "n_estimators"}, params_lgb["n_estimators"]).fit(fijar_categorias(X.iloc[tr], cats, lev), y[tr])
-    pred = np.exp(m.predict(fijar_categorias(X.iloc[te], cats, lev)))
+    lev = _niveles_var(X.iloc[tr], cats)
+    n = params_lgb["n_estimators"]
+    m = vp.ModeloGBM(opts, {k: v for k, v in params_lgb.items() if k != "n_estimators"}).fit(
+        fijar_categorias(X.iloc[tr], cats, lev), y[tr], sup[tr], n_por_seg=n)
+    pred = np.exp(m.predict(fijar_categorias(X.iloc[te], cats, lev), sup[te]))
     compartidos = np.isin(d["grupo"].values[te], d["grupo"].values[tr]).mean() * 100
     return {"n": int(len(d)), "n_test": int(len(te)), "test_con_gemelo_en_train_%": float(compartidos),
             "metricas": metricas(d["price_x"].values[te], pred)}
+
+
+# --- Variantes y ablación (iteración 2) ------------------------------------------------------
+BARRIOS_DEBILES = ["Villa Lugano", "Mataderos", "Constitución", "Centro / Microcentro", "La Boca"]
+PARAMS_V1 = {"num_leaves": 63, "min_child_samples": 10, "learning_rate": 0.03, "reg_lambda": 0.0}
+
+
+def segmentos(precio_real, sup, barrio) -> dict[str, np.ndarray]:
+    precio_real, sup = np.asarray(precio_real), np.asarray(sup)
+    return {"todos": np.ones(len(sup), bool), "< USD 80k": precio_real < 80e3, "> USD 600k": precio_real > 600e3,
+            "≥ 150 m²": sup >= 150, "barrios débiles": np.isin(np.asarray(barrio, object), BARRIOS_DEBILES)}
+
+
+def matriz(d: pd.DataFrame, opts: dict):
+    import variantes_precio as vp
+    X, nums, cats = zpml.build_features(d, version=int(opts["features"]))
+    if opts.get("calle"):
+        X = vp.agregar_calle(X, d); cats = cats + ["calle"]
+    return X, nums, cats
+
+
+def _niveles_var(Xtr, cats):
+    import variantes_precio as vp
+    lev = niveles(Xtr, [c for c in cats if c != "calle"])
+    if "calle" in cats:
+        lev["calle"] = vp.niveles_calle(Xtr["calle"])
+    return lev
+
+
+def cv_variante(d, tr0, fl, opts, params, trim=1.0):
+    """OOF de una variante sobre train (folds agrupados, recorte y niveles por fold)."""
+    import variantes_precio as vp
+    X, nums, cats = matriz(d, opts)
+    X = X.iloc[tr0].reset_index(drop=True)
+    y = np.log(d["price_x"].values[tr0]); sup = d["sup"].values[tr0]; ppm2 = d["ppm2"].values[tr0]
+    oof = np.full(len(X), np.nan); res, iters = [], []
+    for a, va in fl:
+        a = a[recorte_train(ppm2[a], trim)]
+        lev = _niveles_var(X.iloc[a], cats)
+        Xa, Xv = fijar_categorias(X.iloc[a], cats, lev), fijar_categorias(X.iloc[va], cats, lev)
+        m = vp.ModeloGBM(opts, params).fit(Xa, y[a], sup[a], eval_set=(Xv, y[va], sup[va]))
+        iters.append(m.best); oof[va] = m.predict(Xv, sup[va])
+        res.append(metricas(np.exp(y[va]), np.exp(oof[va])))
+    n_seg = {k: int(np.mean([it[k] for it in iters]) * 1.1) for k in iters[0]}
+    return pd.DataFrame(res), oof, n_seg
+
+
+def tabla_segmentos(real, pred, sup, barrio) -> dict:
+    out = {}
+    for k, m in segmentos(real, sup, barrio).items():
+        if m.sum():
+            ape = np.abs(pred[m] - real[m]) / real[m]
+            out[k] = {"n": int(m.sum()), "MAPE_mediana_%": float(np.median(ape) * 100),
+                      "sesgo_mediano_%": float(np.median(real[m] / pred[m] - 1) * 100)}
+    return out
+
+
+def ablacion(df: pd.DataFrame, p: dict, nombres=None, progreso=lambda pct, msg: None) -> dict:
+    import variantes_precio as vp
+    d, pasos = limpiar(df, p.get("operacion", "venta"), p.get("currency", "USD"), p.get("tipo", "departamento"),
+                       float(p.get("fx_mep", 1450)), bool(p.get("excluir_pozo", True)))
+    d = d.reset_index(drop=True)
+    tr0, te = separar(d, "agrupado", float(p.get("test_size", 0.2)), int(p.get("seed", 42)))
+    fl = folds(d["grupo"].values[tr0], int(p.get("cv_folds", 5)), int(p.get("seed", 42)))
+    real = d["price_x"].values[tr0]; sup = d["sup"].values[tr0]; bar = d["barrio"].values[tr0]
+    filas, oofs = [], {}
+    nombres = nombres or list(vp.VARIANTES)
+    for i, n in enumerate(nombres):
+        progreso(5 + 90 * i / len(nombres), f"Ablación: {n}")
+        r, oof, nseg = cv_variante(d, tr0, fl, vp.VARIANTES[n], PARAMS_V1, float(p.get("trim_pct", 1.0)))
+        oofs[n] = oof
+        seg = tabla_segmentos(real, np.exp(oof), sup, bar)
+        filas.append({"variante": n, **{f"{k}_media": r[k].mean() for k in ["MAPE_mediana_%", "dentro_10%_%", "R2_log", "MAE"]},
+                      "MAPE_mediana_%_std": r["MAPE_mediana_%"].std(),
+                      **{f"MAPE {k}": v["MAPE_mediana_%"] for k, v in seg.items() if k != "todos"},
+                      **{f"sesgo {k}": v["sesgo_mediano_%"] for k, v in seg.items() if k != "todos"}})
+    return {"d": d, "pasos": pasos, "tr0": tr0, "te": te, "tabla": pd.DataFrame(filas), "oofs": oofs}

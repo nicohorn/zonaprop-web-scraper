@@ -156,6 +156,42 @@ FLAGS = {
     "apto_credito": r"apto credito",
 }
 
+# v2: más atributos del texto existente (nunca montos). Se activan con build_features(..., version=2).
+FLAGS_V2 = {
+    "reciclado": r"reciclad|refaccionad|a nuevo",
+    "a_reciclar": r"a reciclar|para reciclar|a refaccionar|para refaccionar",
+    "luminoso": r"luminos",
+    "frente": r"al frente|a la calle",
+    "contrafrente": r"contrafrente",
+    "cochera_txt": r"cochera|garage|garaje",
+    "dependencia": r"dependencia",
+    "suite": r"suite",
+    "vista": r"vista abierta|vista panoramica|vista al rio|vista despejada|vistas",
+    "semipiso": r"semipiso|semi piso|piso exclusivo|piso unico",
+    "duplex": r"duplex|triplex",
+    "penthouse": r"penthouse|pent house",
+    "torre": r"\btorre\b",
+    "patio": r"\bpatio\b",
+    "baulera": r"baulera",
+    "apto_profesional": r"apto profesional",
+    "seguridad": r"seguridad|vigilancia",
+    "categoria": r"categoria|premium|lujo|exclusiv|jerarquic",
+    "planta_baja": r"planta baja|\bpb\b",
+    "frances": r"estilo frances|frances",
+    "impecable": r"impecable|excelente estado|muy buen estado",
+}
+_PISO = re.compile(r"\bpiso (\d{1,2})\b|\b(\d{1,2}) ?(?:°|º|o|to|vo|mo|ro|do|er|no)? piso\b")
+_ANT = re.compile(r"(\d{1,3}) anos de antiguedad|antiguedad:? ?(\d{1,3})")
+
+
+def _first_num(rx, t, lo, hi):
+    m = rx.search(t)
+    if not m:
+        return np.nan
+    v = float(next(g for g in m.groups() if g))
+    return v if lo <= v <= hi else np.nan
+
+
 POZO = re.compile(r"\bpozo\b|pre ?-?venta|en construccion|avances? de obra|anticipo|entrega (?:en|estimada|prevista)|posesion (?:en|estimada|prevista)")
 
 
@@ -166,7 +202,7 @@ def es_pozo(df: pd.DataFrame) -> pd.Series:
     return t.str.contains(POZO) | dev | (df.get("tipo_prop", pd.Series("", index=df.index)) == "emprendimiento")
 
 
-def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]]:
+def build_features(df: pd.DataFrame, version: int = 1) -> tuple[pd.DataFrame, list[str], list[str]]:
     """Variables numéricas y categóricas a partir de lo que trae el scraper (sin rasgos de la publicación)."""
     X = pd.DataFrame(index=df.index)
     for c in NUM_BASE + NUM_DETAIL:
@@ -185,6 +221,13 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]
     txt = listing_text(df)
     for k, rx in FLAGS.items():
         X["kw_" + k] = txt.str.contains(rx).astype(int)
+    if version >= 2:
+        for k, rx in FLAGS_V2.items():
+            X["kw_" + k] = txt.str.contains(rx).astype(int)
+        X["piso_txt"] = txt.map(lambda t: _first_num(_PISO, t, 0, 60))
+        X.loc[txt.str.contains(FLAGS_V2["planta_baja"]) & X["piso_txt"].isna(), "piso_txt"] = 0
+        X["antiguedad_txt"] = txt.map(lambda t: _first_num(_ANT, t, 0, 150))
+        X.loc[txt.str.contains(FLAGS["a_estrenar"]) & X["antiguedad_txt"].isna(), "antiguedad_txt"] = 0
     cats = ["barrio", "tipo_prop"]
     for c in ["disposicion", "orientacion", "luminosidad"]:
         if c in df:

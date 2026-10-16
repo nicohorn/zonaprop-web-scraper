@@ -168,7 +168,8 @@ def task_price(p):
         A, B, *_ = text_svd(t.iloc[tr], t.iloc[te], {"svd_components": 30, "min_df": 3})
         Xtr2 = pd.concat([precio.fijar_categorias(X.iloc[tr], cats, r["levels"]).reset_index(drop=True), A], axis=1)
         Xte2 = pd.concat([Xte.reset_index(drop=True), B], axis=1)
-        mt = precio.lgbm({k: v for k, v in r["params_lgb"].items() if k != "n_estimators"}, r["params_lgb"]["n_estimators"]).fit(Xtr2, np.log(d["price_x"].values[tr]))
+        n_txt = int(np.mean(list(r["params_lgb"]["n_estimators"].values())))
+        mt = precio.lgbm({k: v for k, v in r["params_lgb"].items() if k != "n_estimators"}, n_txt).fit(Xtr2, np.log(d["price_x"].values[tr]))
         r["test"]["LightGBM + texto"] = precio.metricas(d["price_x"].values[te], np.exp(mt.predict(Xte2)))
 
     progress(85, "Gráficos y análisis de errores")
@@ -177,9 +178,9 @@ def task_price(p):
     ax.scatter(out["price_x"], out["pred"], s=6, alpha=.4)
     lim = [np.percentile(out["price_x"], 1), np.percentile(out["price_x"], 99)]
     ax.plot(lim, lim, "r--", lw=1); ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("Precio publicado (USD)"); ax.set_ylabel("Predicción (USD)"); ax.set_title(f"{name}: test agrupado")
+    ax.set_xlabel("Precio publicado (USD)"); ax.set_ylabel("Predicción (USD)"); ax.set_title(f"{name} {r['variante']}: test agrupado")
     save_fig(fig, "pred_vs_real.png")
-    imp = pd.DataFrame({"variable": gbm_.feature_name_, "importancia_gain": gbm_.booster_.feature_importance("gain")}).sort_values("importancia_gain", ascending=False)
+    imp = pd.DataFrame({"variable": gbm_.feature_name_, "importancia_gain": sum(m.booster_.feature_importance("gain") for m in gbm_.models.values())}).sort_values("importancia_gain", ascending=False)
     imp["importancia_gain"] = imp["importancia_gain"] / imp["importancia_gain"].sum() * 100
     fig, ax = plt.subplots(figsize=(7, 6))
     top = imp.head(20)[::-1]
@@ -189,7 +190,7 @@ def task_price(p):
         try:
             import shap
             sample = Xte.sample(min(1000, len(Xte)), random_state=0)
-            shap.summary_plot(shap.TreeExplainer(gbm_).shap_values(sample), sample, show=False, max_display=20)
+            shap.summary_plot(shap.TreeExplainer(next(iter(gbm_.models.values()))).shap_values(sample), sample, show=False, max_display=20)
             save_fig(plt.gcf(), "shap_summary.png")
         except Exception as e:  # SHAP es un extra: no voltea la corrida
             progress(88, f"SHAP falló: {e}")
@@ -203,7 +204,7 @@ def task_price(p):
     comp = None
     if p.get("comparar_aleatorio", True):
         progress(92, "Comparación con el protocolo anterior (split aleatorio con duplicados)")
-        comp = precio.comparar_aleatorio(df, p, r["params_lgb"])
+        comp = precio.comparar_aleatorio(df, p, r["params_lgb"], r["variante"])
 
     progress(96, "Guardando modelo")
     cv_tab = pd.DataFrame([{"modelo": k, **{m: f"{v[m + '_media']:.2f} ± {v[m + '_std']:.2f}" for m in ["MAPE_mediana_%", "dentro_10%_%", "R2_log"]},
@@ -216,6 +217,9 @@ def task_price(p):
         "n_train": int(len(tr)), "n_test": int(len(te)), "metricas_test": {"Ridge": r["test"]["Ridge"], name: r["test"]["LightGBM"]},
         "metricas_test_todas": r["test"], "metricas_cv": r["cv"], "cobertura_test_%": r["cobertura"],
         "params_lgb": r["params_lgb"], "ridge_alpha": r["ridge_alpha"], "limpieza": r["pasos"],
+        "variante": r["variante"], "opciones": r["opciones"], "segmentos_test": r["segmentos_test"],
+        "duplicados": p.get("duplicados", "v2_direccion_texto"), "nums_base": r["nums_base"], "cats_base": r["cats_base"],
+        "columns_base": r["columns_base"], "levels_base": r["levels_base"],
         "columns": list(X.columns), "nums": nums, "cats": cats, "levels": r["levels"],
         "barrios": d.iloc[tr]["barrio"].value_counts().to_dict(), "tipos": sorted(d["tipo_prop"].dropna().unique().tolist()),
         "barrio_ppm2_mediana": r["modelos"]["Mediana USD/m² del barrio × m²"].map,
@@ -229,11 +233,13 @@ def task_price(p):
     metr = {f"{k} (test)": v for k, v in r["test"].items()}
     if comp:
         metr["LightGBM · protocolo anterior (aleatorio, con duplicados)"] = comp["metricas"]
-    return {"n_train": int(len(tr)), "n_test": int(len(te)), "split": meta["split"], "modelo": name, "modelo_guardado": "model.joblib",
+    seg_tab = pd.DataFrame([{"modelo": m, "segmento": k, **v} for m, sv in r["segmentos_test"].items() for k, v in sv.items()])
+    save_csv(seg_tab, "segmentos_test.csv")
+    return {"n_train": int(len(tr)), "n_test": int(len(te)), "split": meta["split"], "modelo": name, "variante": r["variante"], "modelo_guardado": "model.joblib",
             "metricas": metr, "cobertura_intervalos_test_%": r["cobertura"], "hiperparametros": r["params_lgb"],
             "grupos_en_train_y_test": r["grupos_compartidos"], "protocolo_anterior": comp,
             "tablas": {"Limpieza (filas por paso)": table(pd.DataFrame(r["pasos"])), "CV 5 folds agrupados (media ± std)": table(cv_tab),
-                       "Test (evaluación única)": table(test_tab), "Error por barrio (test)": table(errs["barrio"].reset_index(), 60),
+                       "Test (evaluación única)": table(test_tab), "Test por segmento": table(seg_tab, 60), "Error por barrio (test)": table(errs["barrio"].reset_index(), 60),
                        "Error por superficie (test)": table(errs["superficie_m2"].reset_index()),
                        "Error por precio (test)": table(errs["precio_usd"].reset_index()), "Importancia": table(imp, 20)}}
 
@@ -479,7 +485,25 @@ def task_survival(p):
     return {"estado": "ok", "bajas_observadas": n_ev, "avisos": len(g), "tablas": {"Cox": table(summ)}}
 
 
-TASK_FUNCS = {"price": task_price, "anomaly": task_anomaly, "yields": task_yields, "segments": task_segments,
+def task_price_ablation(p):
+    import precio
+    progress(3, "Cargando avisos")
+    df = zpml.load()
+    a = precio.ablacion(df, p, p.get("variantes"), progress)
+    tab = a["tabla"]
+    save_csv(tab, "ablacion_cv.csv")
+    plt = plt_()
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    seg = [c for c in tab.columns if c.startswith("MAPE ")]
+    tab.set_index("variante")[["MAPE_mediana_%_media"] + seg].plot.bar(ax=ax)
+    ax.set_ylabel("mediana del error % (CV)"); ax.set_title("Ablación (CV agrupado en train)")
+    save_fig(fig, "ablacion.png")
+    best = tab.sort_values("MAPE_mediana_%_media").iloc[0]["variante"]
+    return {"n_train": int(len(a["tr0"])), "mejor_variante_cv": best, "nota": "Sólo CV sobre train; el test no se usa acá.",
+            "tablas": {"Ablación (CV 5 folds agrupados, train)": table(tab.round(3), 40), "Limpieza": table(pd.DataFrame(a["pasos"]))}}
+
+
+TASK_FUNCS = {"price": task_price, "price_ablation": task_price_ablation, "anomaly": task_anomaly, "yields": task_yields, "segments": task_segments,
               "text": task_text, "survival": task_survival}
 
 

@@ -1,7 +1,7 @@
 {
   "price": {
     "label": "A · Predicción de precio",
-    "desc": "Limpieza con reglas de consistencia y casi-duplicados, test agrupado fijo, CV de 5 folds en train para elegir hiperparámetros, baselines (mediana global, mediana USD/m² del barrio, Ridge) y LightGBM evaluado una vez en test.",
+    "desc": "Limpieza con reglas de consistencia y duplicados validados, test agrupado fijo, CV de 5 folds en train para elegir hiperparámetros, baselines (mediana global, mediana USD/m² del barrio, Ridge), variantes de LightGBM seleccionables y evaluación única en test.",
     "params": {
       "operacion": {
         "type": "select",
@@ -43,6 +43,33 @@
         ],
         "default": "departamento",
         "label": "Tipo"
+      },
+      "variante": {
+        "type": "select",
+        "options": [
+          "v1",
+          "v2_texto",
+          "v2_texto_calle",
+          "v2_ppm2",
+          "v2_pesos",
+          "v2_huber",
+          "v2_l1",
+          "v2_segmentos",
+          "v3_ppm2_huber",
+          "v3_ppm2_pesos",
+          "v3_ppm2_huber_pesos"
+        ],
+        "default": "v3_ppm2_huber",
+        "label": "Variante de LightGBM (v1 = iteración anterior, 13,7 %; ver ablación)"
+      },
+      "duplicados": {
+        "type": "select",
+        "options": [
+          "v2_direccion_texto",
+          "v1_huella"
+        ],
+        "default": "v2_direccion_texto",
+        "label": "Regla de duplicados (v1 = sólo huella, ~30 % de precisión)"
       },
       "target": {
         "type": "select",
@@ -134,10 +161,69 @@
         "type": "bool",
         "default": true,
         "label": "Calcular SHAP"
+      },
+      "referencia_v1": {
+        "type": "bool",
+        "default": true,
+        "label": "Entrenar también v1 como referencia en el mismo test"
       }
     },
     "question": "¿Cuánto debería valer este aviso?",
     "use": "Para estimar precio justo / USD/m²."
+  },
+  "price_ablation": {
+    "label": "A2 · Ablación de variantes del modelo de precio",
+    "desc": "Compara todas las variantes de LightGBM (texto, calle, objetivo log USD/m², pesos, Huber/L1, segmentos) con CV de 5 folds agrupados SOLO sobre train; métricas globales y por segmento (baratos, caros, grandes, barrios débiles). No toca el test.",
+    "params": {
+      "variantes": {
+        "type": "multi",
+        "options": [
+          "v1",
+          "v2_texto",
+          "v2_texto_calle",
+          "v2_ppm2",
+          "v2_pesos",
+          "v2_huber",
+          "v2_l1",
+          "v2_segmentos",
+          "v3_ppm2_huber",
+          "v3_ppm2_pesos",
+          "v3_ppm2_huber_pesos"
+        ],
+        "default": [
+          "v1",
+          "v2_texto",
+          "v2_texto_calle",
+          "v2_ppm2",
+          "v2_pesos",
+          "v2_huber",
+          "v2_l1",
+          "v2_segmentos",
+          "v3_ppm2_huber",
+          "v3_ppm2_pesos",
+          "v3_ppm2_huber_pesos"
+        ],
+        "label": "Variantes a comparar"
+      },
+      "cv_folds": {
+        "type": "number",
+        "min": 3,
+        "max": 10,
+        "step": 1,
+        "default": 5,
+        "label": "Folds (agrupados)"
+      },
+      "seed": {
+        "type": "number",
+        "min": 0,
+        "max": 999999,
+        "step": 1,
+        "default": 42,
+        "label": "Semilla"
+      }
+    },
+    "question": "¿Qué cambio del modelo de precio ayuda y en qué segmento?",
+    "use": "Para justificar la variante elegida en A."
   },
   "anomaly": {
     "label": "B · Oportunidades / anomalías",

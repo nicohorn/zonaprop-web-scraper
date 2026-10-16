@@ -173,6 +173,11 @@ const routes = {
     json(res, 200, ml.start(body.task, body.params || {}));
   },
   'GET /api/ml/price-models': (req, res) => json(res, 200, ml.priceModels()),
+  'GET /api/ml/compare': (req, res) => json(res, 200, ml.compare()),
+  'GET /api/ml/doc': (req, res) => {
+    const p = join(ROOT, 'docs', 'modelo_precio.md');
+    json(res, 200, { name: 'docs/modelo_precio.md', markdown: existsSync(p) ? readFileSync(p, 'utf8') : '' });
+  },
   'POST /api/ml/predict': async (req, res) => {
     const body = await readBody(req);
     const r = await ml.predict(typeof body.run === 'string' ? body.run : null, body.inputs && typeof body.inputs === 'object' ? body.inputs : {});

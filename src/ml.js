@@ -111,9 +111,9 @@ export class MlRunner extends EventEmitter {
     return true;
   }
 
-  listRuns(limit = 40) {
+  listRuns(limit = Infinity) {
     if (!existsSync(RUNS_DIR)) return [];
-    return readdirSync(RUNS_DIR).sort().reverse().slice(0, limit).map((id) => {
+    return readdirSync(RUNS_DIR).filter((id) => /^[\w-]+$/.test(id)).sort().reverse().slice(0, limit).map((id) => {
       const r = readJsonSafe(join(RUNS_DIR, id, 'result.json'));
       return { id, task: r?.task ?? id.split('-').slice(2).join('-'), status: r?.status ?? (this.job?.id === id ? 'running' : 'incompleta'), seconds: r?.seconds ?? null };
     });
@@ -134,9 +134,28 @@ export class MlRunner extends EventEmitter {
       const m = readJsonSafe(join(RUNS_DIR, id, 'model.json'));
       if (!m || !existsSync(join(RUNS_DIR, id, 'model.joblib'))) return null;
       return { run: id, modelo: m.modelo, operacion: m.operacion, currency: m.currency, tipo: m.tipo, target: m.target, split: m.split,
-        n_train: m.n_train, n_test: m.n_test, metricas_test: m.metricas_test, barrios: Object.keys(m.barrios || {}), tipos: m.tipos, predictable: m.predictable !== false };
+        n_train: m.n_train, n_test: m.n_test, metricas_test: m.metricas_test, barrios: Object.keys(m.barrios || {}), tipos: m.tipos, predictable: m.predictable !== false,
+        variante: m.variante || 'v1', duplicados: m.duplicados || 'v1_huella', calle: Boolean(m.opciones?.calle), features: m.opciones?.features || 1 };
     }).filter(Boolean);
     return { latest, models };
+  }
+
+  /** Todas las corridas con sus métricas principales, para compararlas lado a lado en la interfaz. */
+  compare() {
+    if (!existsSync(RUNS_DIR)) return { runs: [] };
+    const runs = readdirSync(RUNS_DIR).filter((id) => /^[\w-]+$/.test(id)).sort().reverse().map((id) => {
+      const r = readJsonSafe(join(RUNS_DIR, id, 'result.json'));
+      if (!r) return null;
+      const m = readJsonSafe(join(RUNS_DIR, id, 'model.json'));
+      const base = { id, task: r.task, status: r.status, started_at: r.started_at, seconds: r.seconds, error: r.error || null };
+      if (r.task === 'price') {
+        return { ...base, variante: r.variante || m?.variante || 'v1', duplicados: m?.duplicados || r.params?.duplicados || 'v1_huella',
+          split: r.split, n_train: r.n_train, n_test: r.n_test, metricas: r.metricas || {}, cobertura: r['cobertura_intervalos_test_%'] ?? m?.['cobertura_test_%'] ?? null };
+      }
+      const keys = Object.entries(r).filter(([k, v]) => !['task', 'params', 'started_at', 'status', 'error', 'traceback', 'seconds', 'artifacts', 'tablas', 'metricas'].includes(k) && (typeof v !== 'object' || v === null));
+      return { ...base, resumen: Object.fromEntries(keys.slice(0, 8)), metricas: r.metricas || null };
+    }).filter(Boolean);
+    return { runs };
   }
 
   /** Corre ml/predict.py con {run, inputs} por stdin; devuelve su JSON. */

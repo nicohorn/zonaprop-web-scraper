@@ -42,11 +42,17 @@
   td.n { text-align:right; font-variant-numeric:tabular-nums; }
   .tablewrap { overflow:auto; max-height:520px; }
   img.art { max-width:100%; border:1px solid var(--line); border-radius:8px; margin:6px 0 14px; background:#fff; }
-  .runs { font-size:13px; max-height:260px; overflow:auto; }
+  .runs { font-size:13px; max-height:420px; overflow:auto; }
   .runs a { cursor:pointer; color:var(--accent); }
   pre.log { background:#12161d; color:#cfd6e1; padding:10px; border-radius:8px; font-size:12px; max-height:200px; overflow:auto; white-space:pre-wrap; }
   .files a { margin-right:12px; font-size:13px; color:var(--accent); }
   .tab small { display:block; font-weight:400; color:var(--muted); font-size:12px; }
+  .views { display:flex; flex-direction:row; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .views .tab { padding:7px 12px; }
+  .md h1 { font-size:22px; } .md h2 { font-size:17px; text-transform:none; letter-spacing:0; color:var(--ink); margin:22px 0 8px; }
+  .md h3 { font-size:15px; margin:16px 0 6px; } .md code { background:var(--chip); padding:1px 4px; border-radius:4px; }
+  .md pre { background:var(--chip); padding:10px; border-radius:8px; overflow:auto; }
+  .runs h3 { font-size:12px; color:var(--muted); margin:10px 0 4px; text-transform:uppercase; }
   .guide summary { font-weight:600; cursor:pointer; }
   .guide table { margin:8px 0; } .guide ol { margin:8px 0 0; padding-left:20px; font-size:14px; }
 </style>
@@ -64,6 +70,7 @@
         <summary>¿Qué responde cada modelo?</summary>
         <table>
           <tr><th>A · Precio</th><td>¿Cuánto debería valer este aviso? <span class="hint">Para estimar precio justo / USD/m².</span></td></tr>
+          <tr><th>A2 · Ablación</th><td>¿Qué variante del modelo de precio conviene? <span class="hint">Compara variantes con CV sobre train (todas siguen seleccionables en A).</span></td></tr>
           <tr><th>B · Oportunidades</th><td>¿Qué avisos parecen baratos o raros? <span class="hint">Para encontrar posibles gangas y errores de datos.</span></td></tr>
           <tr><th>C · Renta vs. venta</th><td>¿Dónde conviene más alquilar respecto del precio de compra? <span class="hint">Por barrio, con el dólar MEP actualizado.</span></td></tr>
           <tr><th>D · Segmentos</th><td>¿Qué tipos de propiedades hay? <span class="hint">Para estudiar submercados.</span></td></tr>
@@ -117,6 +124,13 @@
           <div><label class="f">Expensas (ARS/mes)</label><input type="number" name="expensas" placeholder="opcional" min="0"></div>
         </div>
         <div class="grid2">
+          <div><label class="f">Piso</label><input type="number" name="piso" placeholder="opcional" min="0" max="60"></div>
+          <div><label class="f">Antigüedad (años)</label><input type="number" name="antiguedad" placeholder="opcional" min="0" max="150"></div>
+        </div>
+        <label class="f">Dirección (calle y altura, opcional)</label><input type="text" name="direccion" placeholder="p. ej. Av. Santa Fe 3400">
+        <label class="f">Descripción / características (opcional; se buscan las mismas palabras clave que en los avisos)</label>
+        <input type="text" name="descripcion" placeholder="luminoso, al frente, reciclado, cochera, dependencia, vista abierta…">
+        <div class="grid2">
           <label><input type="checkbox" name="a_estrenar"> A estrenar</label>
           <label><input type="checkbox" name="balcon_terraza"> Balcón o terraza</label>
           <label><input type="checkbox" name="amenities"> Amenities (pileta, SUM, parrilla…)</label>
@@ -131,10 +145,19 @@
       <div class="runs" id="runs"></div>
     </section>
   </div>
+  <div>
+  <nav class="views" id="views">
+    <button class="tab" data-v="result" aria-selected="true">Resultado</button>
+    <button class="tab" data-v="compare" aria-selected="false">Comparar corridas y variantes</button>
+    <button class="tab" data-v="doc" aria-selected="false">Documentación del modelo A</button>
+  </nav>
+  <section id="compare" hidden><h2>Comparar corridas</h2><p class="hint">Cargando…</p></section>
+  <section id="doc" hidden class="md"><p class="hint">Cargando…</p></section>
   <section id="result">
     <h2>Resultado</h2>
     <p class="hint">Elegí un modelo y tocá <b>Entrenar</b>, o abrí una corrida anterior. Los datos salen de <code>data/listings.jsonl</code> (y <code>details.jsonl</code> si visitaste fichas); los resultados quedan en <code>data/ml/runs/</code>.</p>
   </section>
+  </div>
 </main>
 <script>
 const $ = (s) => document.querySelector(s);
@@ -232,7 +255,9 @@ function renderStatus() {
   if (!s.running && s.last) {
     $('#lastmsg').innerHTML = s.last.status === 'ok' ? `<p class="ok">Última corrida OK (${esc(s.last.id)})</p>` : `<p class="err">Última corrida: ${esc(s.last.status)} — ${esc(s.last.error || '')}</p>`;
   }
-  $('#runs').innerHTML = s.runs.length ? s.runs.map((r) => `<div><a data-id="${esc(r.id)}">${esc(r.id)}</a> <span class="hint">${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</span></div>`).join('') : '<p class="hint">Todavía no hay corridas.</p>';
+  const byTask = {};
+  for (const r of s.runs) (byTask[r.task] ||= []).push(r);
+  $('#runs').innerHTML = s.runs.length ? Object.entries(byTask).map(([t, rs]) => `<h3>${esc(s.tasks[t]?.label || t)} (${rs.length})</h3>` + rs.map((r) => `<div><a data-id="${esc(r.id)}">${esc(r.id)}</a> <span class="hint">${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</span></div>`).join('')).join('') : '<p class="hint">Todavía no hay corridas.</p>';
   $('#runs').querySelectorAll('a').forEach((a) => a.onclick = () => showRun(a.dataset.id));
   if (wasRunning && !s.running && s.last) { showRun(s.last.id); loadPriceModels(); }
   wasRunning = s.running;
@@ -264,7 +289,7 @@ function fillPredict(keep) {
   if (!barrios.includes(prevB) && barrios.length) f.barrio.value = barrios.includes('Palermo') ? 'Palermo' : barrios[0];
   f.tipo.innerHTML = m.tipos.map((t) => `<option ${t === prevT ? 'selected' : ''}>${esc(t)}</option>`).join('');
   const g = Object.entries(m.metricas_test || {}).find(([k]) => !k.startsWith('Ridge'))?.[1] || {};
-  $('#pmsg').innerHTML = `${esc(m.modelo)} · ${esc(m.operacion)} ${esc(m.currency)} · tipo ${esc(m.tipo)} · split ${esc(m.split)} (train ${m.n_train}, test ${m.n_test}) · error mediano en test ${fmt(g['MAPE_mediana_%'])} %`;
+  $('#pmsg').innerHTML = `${esc(m.modelo)} ${esc(m.variante)} · duplicados ${esc(m.duplicados)} · ${esc(m.operacion)} ${esc(m.currency)} · tipo ${esc(m.tipo)} · split ${esc(m.split)} (train ${m.n_train}, test ${m.n_test}) · error mediano en test ${fmt(g['MAPE_mediana_%'])} %`;
 }
 async function loadPriceModels() {
   try { pmodels = await api('/api/ml/price-models'); } catch { return; }
@@ -273,7 +298,7 @@ async function loadPriceModels() {
   if (!usable.length) { f.hidden = true; $('#pmsg').innerHTML = 'Todavía no hay un modelo de precio guardado: <b>entrená el modelo A primero</b>.'; return; }
   pmodels.models = usable;
   const cur = f.run.value || pmodels.latest || usable[0].run;
-  f.run.innerHTML = usable.map((m) => `<option value="${esc(m.run)}" ${m.run === cur ? 'selected' : ''}>${esc(m.run)}${m.run === pmodels.latest ? ' (último)' : ''}</option>`).join('');
+  f.run.innerHTML = usable.map((m) => `<option value="${esc(m.run)}" ${m.run === cur ? 'selected' : ''}>${esc(m.run)} · ${esc(m.variante)} · ${fmt((Object.entries(m.metricas_test || {}).find(([k]) => !k.startsWith('Ridge'))?.[1] || {})['MAPE_mediana_%'])} %${m.run === pmodels.latest ? ' (último)' : ''}</option>`).join('');
   f.hidden = false;
   fillPredict(true);
 }
@@ -283,6 +308,7 @@ $('#pform').onsubmit = async (ev) => {
   const f = $('#pform'), inputs = {};
   for (const k of ['barrio', 'tipo', 'superficie_total', 'superficie_cubierta', 'ambientes', 'dormitorios', 'banos', 'cocheras', 'expensas']) inputs[k] = f[k].value;
   for (const k of ['a_estrenar', 'balcon_terraza', 'amenities', 'apto_credito']) inputs[k] = f[k].checked;
+  for (const k of ['piso', 'antiguedad', 'direccion', 'descripcion']) inputs[k] = f[k].value;
   $('#pbtn').disabled = true; $('#pout').innerHTML = '<p class="hint">Calculando…</p>';
   try {
     const r = await api('/api/ml/predict', { run: f.run.value, inputs });
@@ -298,6 +324,71 @@ $('#pform').onsubmit = async (ev) => {
   $('#pbtn').disabled = false;
 };
 loadPriceModels();
+
+// --- Vistas: resultado / comparar / documentación -----------------------------------------
+function setView(v) {
+  for (const b of document.querySelectorAll('#views .tab')) b.setAttribute('aria-selected', String(b.dataset.v === v));
+  for (const id of ['result', 'compare', 'doc']) $('#' + id).hidden = id !== v;
+  if (v === 'compare') loadCompare();
+  if (v === 'doc') loadDoc();
+}
+document.querySelectorAll('#views .tab').forEach((b) => b.onclick = () => setView(b.dataset.v));
+const _showRun = showRun;
+showRun = async (id) => { setView('result'); return _showRun(id); };
+
+async function loadCompare() {
+  const { runs } = await api('/api/ml/compare');
+  const price = runs.filter((r) => r.task === 'price' && r.status === 'ok');
+  const rows = [];
+  for (const r of price) for (const [m, v] of Object.entries(r.metricas || {})) {
+    rows.push([r.id, r.variante, r.duplicados, r.split, r.n_train, r.n_test, m, v.MAE ?? null, v['MAPE_mediana_%'] ?? null, v['dentro_10%_%'] ?? null, v.R2_log ?? null, v.R2 ?? null,
+      /LightGBM \(test\)/.test(m) && r.cobertura ? r.cobertura['80%'] : null]);
+  }
+  let h = '<h2>A · Precio: todas las corridas y modelos (test)</h2><p class="hint">Cada corrida usa su propio test agrupado; cambiar la regla de duplicados cambia el test, así que compará variantes dentro de una misma corrida (fila "v1 (referencia)") o con la ablación.</p>';
+  h += tableHtml({ columns: ['corrida', 'variante', 'duplicados', 'split', 'train', 'test', 'modelo', 'MAE', 'mediana APE %', 'dentro 10 %', 'R² log', 'R²', 'cobertura 80 %'], rows });
+  const abl = runs.filter((r) => r.task === 'price_ablation' && r.status === 'ok');
+  for (const r of abl) {
+    const full = await api(`/api/ml/run?id=${encodeURIComponent(r.id)}`);
+    const t = Object.entries(full.result?.tablas || {}).find(([k]) => k.startsWith('Ablación'));
+    if (t) h += `<h2>A2 · Ablación · ${esc(r.id)}</h2>` + tableHtml(t[1]);
+  }
+  const other = runs.filter((r) => !['price', 'price_ablation'].includes(r.task));
+  h += '<h2>B–F y otras corridas</h2>' + tableHtml({ columns: ['corrida', 'modelo', 'estado', 'resumen'], rows: other.map((r) => [r.id, state?.tasks[r.task]?.label || r.task, r.status,
+    r.error || Object.entries(r.resumen || {}).map(([k, v]) => `${k}: ${typeof v === 'number' ? fmt(v) : v}`).join(' · ')]) });
+  $('#compare').innerHTML = h;
+  $('#compare').querySelectorAll('td:first-child').forEach((td) => { td.style.cursor = 'pointer'; td.onclick = () => showRun(td.textContent); });
+}
+
+function md(src) {
+  const inl = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, a, u) => /^https?:/.test(u) ? `<a href="${u}" target="_blank" rel="noopener">${a}</a>` : a);
+  const lines = src.replace(/\r/g, '').split('\n'); let h = '', i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { const b = []; i++; while (i < lines.length && !lines[i].startsWith('```')) b.push(lines[i++]); i++; h += `<pre>${esc(b.join('\n'))}</pre>`; continue; }
+    const m = l.match(/^(#{1,4}) (.*)/); if (m) { h += `<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (l.startsWith('|')) {
+      const rows = []; while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cells = (r) => r.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      const body = rows.slice(2).map(cells);
+      h += `<div class="tablewrap"><table><thead><tr>${cells(rows[0]).map((c) => `<th>${inl(c)}</th>`).join('')}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.) /.test(l)) {
+      const ord = /^\s*\d+\./.test(l), items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) { let it = lines[i++].replace(/^\s*([-*]|\d+\.) /, ''); while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*]|\d+\.) /.test(lines[i])) it += ' ' + lines[i++].trim(); items.push(it); }
+      h += `<${ord ? 'ol' : 'ul'}>${items.map((x) => `<li>${inl(x)}</li>`).join('')}</${ord ? 'ol' : 'ul'}>`; continue;
+    }
+    if (!l.trim()) { i++; continue; }
+    const p = []; while (i < lines.length && lines[i].trim() && !/^(#|\||```|\s*([-*]|\d+\.) )/.test(lines[i])) p.push(lines[i++]);
+    h += `<p>${inl(p.join(' '))}</p>`;
+  }
+  return h;
+}
+async function loadDoc() {
+  const d = await api('/api/ml/doc');
+  $('#doc').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)}</p>` + md(d.markdown) : '<p class="err">No se encontró docs/modelo_precio.md</p>';
+}
 
 (async () => {
   state = await api('/api/ml/state');

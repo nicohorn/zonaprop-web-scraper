@@ -76,8 +76,16 @@ def main():
             x["superficie_total"] = x["superficie_cubierta"]
         x["superficie_cubierta"] = None
     flags = " ".join(t for k, t in FLAG_TEXT.items() if truthy(x.get(k)))
+    extra = []
+    if num(x.get("piso")) is not None:
+        extra.append(f"piso {int(num(x['piso']))}")
+    if num(x.get("antiguedad")) is not None:
+        extra.append(f"{int(num(x['antiguedad']))} anos de antiguedad")
+    # Texto libre: mismas palabras clave que en los avisos; los montos se borran como en el entrenamiento
+    texto = zpml.strip_amounts(str(x.get("descripcion") or ""))[:2000]
     row = {
-        "id": "pred", "url": "", "title": flags, "description_short": "", "pills": [],
+        "id": "pred", "url": "", "title": " ".join([flags, *extra]), "description_short": texto, "pills": [],
+        "address": str(x.get("direccion") or "")[:200],
         "barrio": barrio, "tipo_prop": x["tipo"], "location": f"{barrio}, Capital Federal",
         **{k: num(x.get(k)) for k in ["superficie_total", "superficie_cubierta", "ambientes", "dormitorios", "banos", "cocheras", "expensas"]},
     }
@@ -89,16 +97,27 @@ def main():
     if e is not None and not (200 <= e / sup <= 30000):
         warn.append("Expensas fuera de rango para la superficie: se ignoran.")
         df["expensas"] = np.nan
-    X, _, _ = zpml.build_features(df)
-    X = X.reindex(columns=meta["columns"])
-    for c in meta["cats"]:
-        X[c] = pd.Categorical(X[c].astype(object), categories=levels[c])
-    for c in meta["nums"]:
-        if c in X:
-            X[c] = pd.to_numeric(X[c], errors="coerce").astype(float)
+    opts = meta.get("opciones") or {"features": 1}
 
-    raw = float(bundle["gbm"].predict(X)[0])
-    Xr = X.astype({c: object for c in meta["cats"]})
+    def matriz(columns, cats, nums, lv, version, calle=False):
+        X, _, _ = zpml.build_features(df, version=version)
+        if calle:
+            import variantes_precio as vp
+            X = vp.agregar_calle(X, df)
+        X = X.reindex(columns=columns)
+        for c in cats:
+            X[c] = pd.Categorical(X[c].astype(object), categories=lv[c])
+        for c in nums:
+            if c in X:
+                X[c] = pd.to_numeric(X[c], errors="coerce").astype(float)
+        return X
+
+    X = matriz(meta["columns"], meta["cats"], meta["nums"], levels, int(opts.get("features", 1)), bool(opts.get("calle")))
+    if opts.get("calle") and row.get("address") and pd.isna(X["calle"].iloc[0]):
+        warn.append("La calle no está entre las vistas en el entrenamiento (≥ 15 avisos): se ignora.")
+    Xb = X if "columns_base" not in meta else matriz(meta["columns_base"], meta["cats_base"], meta["nums_base"], meta["levels_base"], 1)
+    raw = float(bundle["gbm"].predict(X, np.array([sup]))[0]) if "opciones" in meta else float(bundle["gbm"].predict(X)[0])
+    Xr = Xb.astype({c: object for c in meta.get("cats_base", meta["cats"])})
     ridge_raw = float(bundle["ridge"].predict(Xr)[0])
     to_price = (lambda v: float(np.exp(v))) if meta["target"] == "log_price" else (lambda v: float(v * sup))
     price, ridge_price = to_price(raw), to_price(ridge_raw)
