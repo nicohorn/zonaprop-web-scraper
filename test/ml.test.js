@@ -56,7 +56,7 @@ test('run.py: entrena price y yields sobre datos sintéticos', { skip: !hasDeps 
   }
   lines.push(JSON.stringify({ id: '9', url: 'x', price: 1, price_currency: 'USD', location: 'Pilar, GBA Norte', operacion: 'venta' }));
   writeFileSync(join(data, 'listings.jsonl'), lines.join('\n') + '\n');
-  for (const [task, params] of [['price', { shap: false, n_estimators: 50 }], ['yields', { min_n: 3 }], ['segments', {}]]) {
+  for (const [task, params] of [['price', { shap: false, tune: false }], ['yields', { min_n: 3 }], ['segments', {}]]) {
     const dir = join(data, 'ml', 'runs', 'run-' + task);
     spawnSync(process.execPath, ['-e', `require('fs').mkdirSync(${JSON.stringify(dir)},{recursive:true});require('fs').writeFileSync(${JSON.stringify(join(dir, 'params.json'))},${JSON.stringify(JSON.stringify(params))})`]);
     const r = spawnSync(py, [join(ROOT, 'ml', 'run.py'), task, '--run-dir', dir], { encoding: 'utf8', env: { ...process.env, ZP_DATA_DIR: data, PYTHONUTF8: '1' } });
@@ -82,4 +82,17 @@ test('split temporal: el test son los avisos más nuevos', { skip: !hasDeps && '
   const code = "import sys;sys.path.insert(0,'ml');import pandas as pd,run;d=pd.DataFrame({'date_posted':['2026-01-0%d'%i for i in range(1,10)]+['2026-02-01']});tr,te=run.split_idx(d,{'split':'temporal','test_size':0.2});print(sorted(te.tolist()))";
   const r = spawnSync(py, ['-c', code], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(r.stdout.trim(), '[8, 9]', r.stderr);
+});
+
+test('zpml/precio: montos fuera del texto, columnas faltantes, pozo y test agrupado', { skip: !hasDeps && 'sin Python' }, () => {
+  const code = [
+    "import sys;sys.path.insert(0,'ml');import pandas as pd,numpy as np,zpml,precio",
+    "print(zpml.strip_amounts('Depto USD 120.000 luminoso u$s 95 mil').split())",
+    "X,n,c=zpml.build_features(pd.DataFrame({'barrio':['Palermo'],'superficie_total':[50]}));print(int(X['superficie'].iloc[0]))",
+    "print(zpml.es_pozo(pd.DataFrame({'title':['Venta de pozo','Depto'],'description_short':[None,'a estrenar']})).tolist())",
+    "d=pd.DataFrame({'grupo':[str(i//3) for i in range(300)],'date_posted':['2026-01-01']*300});tr,te=precio.separar(d,'agrupado',0.2,1)",
+    "print(len(set(d.grupo.iloc[tr])&set(d.grupo.iloc[te])))",
+  ].join('\n');
+  const r = spawnSync(py, ['-c', code], { cwd: ROOT, encoding: 'utf8' });
+  assert.deepEqual(r.stdout.trim().split(/\r?\n/), ["['Depto', 'luminoso']", '50', '[True, False]', '0'], r.stderr);
 });

@@ -129,8 +129,9 @@ def text_svd(texts_train, texts_test, p):
 
 
 def texts(d):
-    desc = d["description"] if "description" in d else pd.Series("", index=d.index)
-    return (d["title"].fillna("") + ". " + desc.fillna(d.get("description_short", "")).fillna("")).astype(str)
+    """Título + descripción SIN montos (USD/$/cifras grandes): el modelo no puede leer el precio del texto."""
+    desc = d["description"] if "description" in d else zpml._text_col(d, "description_short")
+    return (zpml._text_col(d, "title") + ". " + desc.fillna("").astype(str)).map(zpml.strip_amounts)
 
 
 def split_idx(d: pd.DataFrame, p) -> tuple[np.ndarray, np.ndarray]:
@@ -146,102 +147,95 @@ def split_idx(d: pd.DataFrame, p) -> tuple[np.ndarray, np.ndarray]:
     return train_test_split(np.arange(n), test_size=ts, random_state=int(p.get("seed", 42)))
 
 
-def save_price_model(model, ridge, name, columns, nums, cats, X, d, p, metrics_, n_tr, n_te, resid_log):
-    """Modelo + metadatos en la carpeta de la corrida; data/ml/latest_price.json apunta a la última."""
-    import joblib
-    levels = {c: [str(v) for v in X[c].cat.categories] for c in cats}
-    q = np.quantile(resid_log, [0.1, 0.25, 0.5, 0.75, 0.9]) if len(resid_log) else np.zeros(5)
-    meta = {
-        "run": RUN.name, "created_at": datetime.now(timezone.utc).isoformat(), "modelo": name,
-        "target": p["target"], "operacion": p["operacion"], "currency": p["currency"], "fx_mep": p["fx_mep"], "tipo": p["tipo"],
-        "split": p.get("split", "aleatorio"), "test_size": p["test_size"], "seed": p.get("seed", 42),
-        "n_train": int(n_tr), "n_test": int(n_te), "metricas_test": metrics_,
-        "columns": list(columns), "nums": nums, "cats": cats, "levels": levels,
-        "barrios": d["barrio"].value_counts().to_dict(), "tipos": sorted(d["tipo_prop"].dropna().unique().tolist()),
-        "resid_log_quantiles": {"q10": float(q[0]), "q25": float(q[1]), "q50": float(q[2]), "q75": float(q[3]), "q90": float(q[4])},
-        "predictable": not p.get("use_text"),
-    }
-    joblib.dump({"gbm": model, "ridge": ridge, "meta": meta}, RUN / "model.joblib")
-    (RUN / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1, default=_py), encoding="utf-8")
-    ARTIFACTS.append("model.json")
-    if meta["predictable"]:
-        (RUN.parent.parent / "latest_price.json").write_text(json.dumps({"run": RUN.name}), encoding="utf-8")
-
-
 # ---------------------------------------------------------------------------------------------
 def task_price(p):
-    from sklearn.model_selection import train_test_split
+    """Modelo A: pipeline de ml/precio.py (limpieza, test agrupado, CV, baselines, evaluación única)."""
+    import joblib
+    import precio
     progress(3, "Cargando avisos")
     df = zpml.load()
-    d = zpml.price_frame(df, p["operacion"], p["currency"], float(p["fx_mep"]), p["tipo"])
-    need_rows(d, 60, "entrenar")
-    progress(10, f"{len(d)} avisos · armando variables")
-    X, nums, cats = zpml.build_features(d)
-    y_price = d["price_x"].values
-    sup = d["sup"].values
-    y = np.log(y_price) if p["target"] == "log_price" else y_price / sup
-    to_price = (lambda v, s: np.exp(v)) if p["target"] == "log_price" else (lambda v, s: v * s)
-    tr, te = split_idx(d, p)
-    Xtr, Xte = X.iloc[tr].reset_index(drop=True), X.iloc[te].reset_index(drop=True)
+    progress(8, "Limpieza, casi-duplicados y separación train/test")
+    r = precio.entrenar(df, p, progress)
+    d, X, te, tr = r["d"], r["X"], r["te"], r["tr"]
+    gbm_, name = r["gbm"], "LightGBM"
+    cats, nums = r["cats"], r["nums"]
+    Xte = precio.fijar_categorias(X.iloc[te], cats, r["levels"])
+    out = r["pred_test"]
+
     if p.get("use_text"):
-        progress(15, "Texto: TF-IDF + SVD")
+        progress(80, "Experimento: texto TF-IDF + SVD (sin montos)")
         t = texts(d)
         A, B, *_ = text_svd(t.iloc[tr], t.iloc[te], {"svd_components": 30, "min_df": 3})
-        Xtr, Xte = pd.concat([Xtr, A], axis=1), pd.concat([Xte, B], axis=1)
-        nums = nums + list(A.columns)
+        Xtr2 = pd.concat([precio.fijar_categorias(X.iloc[tr], cats, r["levels"]).reset_index(drop=True), A], axis=1)
+        Xte2 = pd.concat([Xte.reset_index(drop=True), B], axis=1)
+        mt = precio.lgbm({k: v for k, v in r["params_lgb"].items() if k != "n_estimators"}, r["params_lgb"]["n_estimators"]).fit(Xtr2, np.log(d["price_x"].values[tr]))
+        r["test"]["LightGBM + texto"] = precio.metricas(d["price_x"].values[te], np.exp(mt.predict(Xte2)))
 
-    progress(25, "Baseline: Ridge")
-    rp = ridge_pipe(nums, cats, float(p["ridge_alpha"]))
-    obj = lambda Z: Z.astype({c: object for c in cats})  # one-hot sobre texto, no category
-    rp.fit(obj(Xtr), y[tr])
-    m_ridge = metrics(y_price[te], to_price(rp.predict(obj(Xte)), sup[te]))
-
-    model, name = gbm(p, len(tr))
-    progress(45, f"Entrenando {name} ({p['n_estimators']} árboles)")
-    model.fit(Xtr, y[tr])
-    pred = to_price(model.predict(Xte), sup[te])
-    m_gbm = metrics(y_price[te], pred)
-    progress(70, "Gráficos")
-
+    progress(85, "Gráficos y análisis de errores")
     plt = plt_()
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(y_price[te], pred, s=6, alpha=.4)
-    lim = [np.percentile(y_price[te], 1), np.percentile(y_price[te], 99)]
+    ax.scatter(out["price_x"], out["pred"], s=6, alpha=.4)
+    lim = [np.percentile(out["price_x"], 1), np.percentile(out["price_x"], 99)]
     ax.plot(lim, lim, "r--", lw=1); ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("Precio real"); ax.set_ylabel("Predicción"); ax.set_title(f"{name}: test")
+    ax.set_xlabel("Precio publicado (USD)"); ax.set_ylabel("Predicción (USD)"); ax.set_title(f"{name}: test agrupado")
     save_fig(fig, "pred_vs_real.png")
-
-    imp = None
-    if hasattr(model, "feature_importances_"):
-        imp = pd.DataFrame({"variable": Xtr.columns, "importancia": model.feature_importances_}).sort_values("importancia", ascending=False)
-        fig, ax = plt.subplots(figsize=(7, 6))
-        top = imp.head(20)[::-1]
-        ax.barh(top["variable"], top["importancia"]); ax.set_title("Importancia (splits)")
-        save_fig(fig, "importancia.png")
-        save_csv(imp, "importancia.csv")
-
-    if p.get("shap") and have("shap") and name == "LightGBM":
-        progress(80, "SHAP")
+    imp = pd.DataFrame({"variable": gbm_.feature_name_, "importancia_gain": gbm_.booster_.feature_importance("gain")}).sort_values("importancia_gain", ascending=False)
+    imp["importancia_gain"] = imp["importancia_gain"] / imp["importancia_gain"].sum() * 100
+    fig, ax = plt.subplots(figsize=(7, 6))
+    top = imp.head(20)[::-1]
+    ax.barh(top["variable"], top["importancia_gain"]); ax.set_title("Importancia (% de ganancia)")
+    save_fig(fig, "importancia.png"); save_csv(imp, "importancia.csv")
+    if p.get("shap") and have("shap"):
         try:
             import shap
             sample = Xte.sample(min(1000, len(Xte)), random_state=0)
-            sv = shap.TreeExplainer(model).shap_values(sample)
-            shap.summary_plot(sv, sample, show=False, max_display=20)
+            shap.summary_plot(shap.TreeExplainer(gbm_).shap_values(sample), sample, show=False, max_display=20)
             save_fig(plt.gcf(), "shap_summary.png")
         except Exception as e:  # SHAP es un extra: no voltea la corrida
-            progress(85, f"SHAP falló: {e}")
-
-    progress(92, "Guardando predicciones")
-    out = d.iloc[te][["id", "url", "barrio", "tipo_prop", "price_x", "sup", "ambientes"]].copy()
-    out["pred"] = pred
-    out["residuo_%"] = (out["price_x"] / out["pred"] - 1) * 100
+            progress(88, f"SHAP falló: {e}")
+    errs = precio.analisis_errores(out)
+    for k, t in errs.items():
+        save_csv(t.reset_index(), f"error_por_{k}.csv")
+    save_csv(pd.DataFrame(r["pasos"]), "limpieza_pasos.csv")
+    save_csv(r["tuning"], "cv_grilla_lightgbm.csv")
     save_csv(out.sort_values("residuo_%"), "predicciones_test.csv")
+
+    comp = None
+    if p.get("comparar_aleatorio", True):
+        progress(92, "Comparación con el protocolo anterior (split aleatorio con duplicados)")
+        comp = precio.comparar_aleatorio(df, p, r["params_lgb"])
+
     progress(96, "Guardando modelo")
-    save_price_model(model, rp, name, Xtr.columns, nums, cats, X, d, p, {"Ridge": m_ridge, name: m_gbm},
-                     len(tr), len(te), np.log(y_price[te] / pred))
-    return {"n_train": len(tr), "n_test": len(te), "split": p["split"], "modelo": name, "modelo_guardado": "model.joblib",
-            "metricas": {"Ridge (test)": m_ridge, f"{name} (test)": m_gbm},
-            "tablas": {"Importancia": table(imp, 20)} if imp is not None else {}}
+    cv_tab = pd.DataFrame([{"modelo": k, **{m: f"{v[m + '_media']:.2f} ± {v[m + '_std']:.2f}" for m in ["MAPE_mediana_%", "dentro_10%_%", "R2_log"]},
+                             "MAE": f"{v['MAE_media']:,.0f} ± {v['MAE_std']:,.0f}"} for k, v in r["cv"].items()])
+    test_tab = pd.DataFrame([{"modelo": k, **v} for k, v in r["test"].items()])
+    meta = {
+        "run": RUN.name, "created_at": datetime.now(timezone.utc).isoformat(), "modelo": name, "target": "log_price",
+        "operacion": p["operacion"], "currency": p["currency"], "fx_mep": p["fx_mep"], "tipo": p["tipo"],
+        "split": p.get("split", "agrupado"), "test_size": p["test_size"], "seed": p.get("seed", 42),
+        "n_train": int(len(tr)), "n_test": int(len(te)), "metricas_test": {"Ridge": r["test"]["Ridge"], name: r["test"]["LightGBM"]},
+        "metricas_test_todas": r["test"], "metricas_cv": r["cv"], "cobertura_test_%": r["cobertura"],
+        "params_lgb": r["params_lgb"], "ridge_alpha": r["ridge_alpha"], "limpieza": r["pasos"],
+        "columns": list(X.columns), "nums": nums, "cats": cats, "levels": r["levels"],
+        "barrios": d.iloc[tr]["barrio"].value_counts().to_dict(), "tipos": sorted(d["tipo_prop"].dropna().unique().tolist()),
+        "barrio_ppm2_mediana": r["modelos"]["Mediana USD/m² del barrio × m²"].map,
+        "resid_log_quantiles": r["resid_log_quantiles"], "intervalo": "cuantiles de residuos fuera de fold (CV en train)",
+        "usa_superficie_cubierta": "superficie_cubierta" in X.columns, "predictable": True,
+    }
+    joblib.dump({"gbm": gbm_, "ridge": r["ridge"], "meta": meta}, RUN / "model.joblib")
+    (RUN / "model.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1, default=_py), encoding="utf-8")
+    ARTIFACTS.append("model.json")
+    (RUN.parent.parent / "latest_price.json").write_text(json.dumps({"run": RUN.name}), encoding="utf-8")
+    metr = {f"{k} (test)": v for k, v in r["test"].items()}
+    if comp:
+        metr["LightGBM · protocolo anterior (aleatorio, con duplicados)"] = comp["metricas"]
+    return {"n_train": int(len(tr)), "n_test": int(len(te)), "split": meta["split"], "modelo": name, "modelo_guardado": "model.joblib",
+            "metricas": metr, "cobertura_intervalos_test_%": r["cobertura"], "hiperparametros": r["params_lgb"],
+            "grupos_en_train_y_test": r["grupos_compartidos"], "protocolo_anterior": comp,
+            "tablas": {"Limpieza (filas por paso)": table(pd.DataFrame(r["pasos"])), "CV 5 folds agrupados (media ± std)": table(cv_tab),
+                       "Test (evaluación única)": table(test_tab), "Error por barrio (test)": table(errs["barrio"].reset_index(), 60),
+                       "Error por superficie (test)": table(errs["superficie_m2"].reset_index()),
+                       "Error por precio (test)": table(errs["precio_usd"].reset_index()), "Importancia": table(imp, 20)}}
 
 
 def task_anomaly(p):

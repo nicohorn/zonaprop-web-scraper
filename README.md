@@ -104,14 +104,20 @@ tablas, gráficos, CSV) a la derecha; cada corrida queda en `data/ml/runs/<fecha
 | **E · Texto** | ¿Qué palabras del aviso mueven el precio? | Con descripciones (mejor con fichas). | 80 |
 | **F · Tiempo hasta baja** | ¿Cuánto tarda un aviso en desaparecer? | Más adelante: requiere re-scrapes con historial de cambios. | 30 bajas |
 
-**Train/test**: A y E separan un test (`aleatorio` con semilla, o `temporal` = los avisos más
-nuevos quedan para test); todas las métricas mostradas son sobre ese test.
+**Train/test**: A usa un test fijo del 20 % **agrupado** (la misma unidad, aunque esté
+duplicada o republicada, nunca queda en train y en test), elige hiperparámetros con CV de 5 folds
+agrupados sobre train y evalúa una sola vez en test, contra baselines (mediana global, mediana
+USD/m² del barrio × m², Ridge). Resultado actual: mediana de error 13,7 % en test (barrio × m²:
+19,3 %; Ridge: 15,1 %). Proceso completo, conteo de filas, métricas y limitaciones en
+[`docs/modelo_precio.md`](docs/modelo_precio.md). E separa `aleatorio` o `temporal`.
 
 **Predecir precio**: cada corrida de A guarda el modelo (`model.joblib` + `model.json` con
 variables, barrios, filtros, métricas y tamaños de train/test) y `data/ml/latest_price.json`
 apunta a la última. En el panel *Predecir precio* de Modelos se elige el modelo (por defecto el
 último), se cargan barrio, tipo, m², ambientes, baños, etc., y devuelve precio y USD/m² con un
-rango (percentiles de error del test). Por debajo: `POST /api/ml/predict` → `ml/predict.py`.
+rango de 80 % y 50 % (cuantiles de residuos fuera de fold; en test, el de 80 % contuvo el
+79,9 % de los precios). Casillas: a estrenar, balcón/terraza, amenities y apto crédito. Un barrio
+no visto se predice sin barrio y con aviso. Por debajo: `POST /api/ml/predict` → `ml/predict.py`.
 
 Defaults: venta, USD, departamentos, test 20 %. **El dólar MEP por defecto (1450) es fijo:
 actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus rangos están en
@@ -119,9 +125,10 @@ actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus r
 
 ## Notebook
 
-`notebooks/01_price_prediction.ipynb`: carga CABA, filtra venta en USD, arma variables, entrena
-Ridge y LightGBM, métricas, gráficos, SHAP y residuos por barrio. Usa `ml/zpml.py`, así que da lo
-mismo que la interfaz. Abrir con `ml\.venv\Scripts\jupyter lab`.
+`notebooks/01_price_prediction.ipynb` (guardado con salidas): limpieza con filas por paso,
+variables, test agrupado, CV, baselines, evaluación en test, comparación con el protocolo
+anterior, calibración del intervalo, errores por barrio, tamaño y precio, y SHAP. Usa
+`ml/precio.py`, así que da lo mismo que la interfaz. Abrir con `ml\.venv\Scripts\jupyter lab`.
 
 ## Datos
 

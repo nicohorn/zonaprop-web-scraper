@@ -1,7 +1,7 @@
 {
   "price": {
     "label": "A · Predicción de precio",
-    "desc": "Ridge (baseline) + LightGBM. Métricas en USD sobre un test separado, importancia de variables y SHAP.",
+    "desc": "Limpieza con reglas de consistencia y casi-duplicados, test agrupado fijo, CV de 5 folds en train para elegir hiperparámetros, baselines (mediana global, mediana USD/m² del barrio, Ridge) y LightGBM evaluado una vez en test.",
     "params": {
       "operacion": {
         "type": "select",
@@ -47,11 +47,20 @@
       "target": {
         "type": "select",
         "options": [
-          "log_price",
-          "usd_m2"
+          "log_price"
         ],
         "default": "log_price",
-        "label": "Objetivo"
+        "label": "Objetivo (log del precio; métricas en USD)"
+      },
+      "split": {
+        "type": "select",
+        "options": [
+          "agrupado",
+          "temporal",
+          "aleatorio"
+        ],
+        "default": "agrupado",
+        "label": "Test fijo (agrupado = la misma propiedad nunca en train y test; temporal = los más nuevos; aleatorio = sólo para comparar)"
       },
       "test_size": {
         "type": "number",
@@ -61,15 +70,6 @@
         "default": 0.2,
         "label": "Proporción de test"
       },
-      "split": {
-        "type": "select",
-        "options": [
-          "aleatorio",
-          "temporal"
-        ],
-        "default": "aleatorio",
-        "label": "Separación train/test (temporal = test con los avisos más nuevos)"
-      },
       "seed": {
         "type": "number",
         "min": 0,
@@ -78,29 +78,26 @@
         "default": 42,
         "label": "Semilla aleatoria"
       },
+      "cv_folds": {
+        "type": "number",
+        "min": 3,
+        "max": 10,
+        "step": 1,
+        "default": 5,
+        "label": "Folds de validación cruzada (agrupados, sobre train)"
+      },
+      "tune": {
+        "type": "bool",
+        "default": true,
+        "label": "Elegir hiperparámetros por CV (grilla de 12)"
+      },
       "learning_rate": {
         "type": "number",
         "min": 0.005,
         "max": 0.5,
         "step": 0.005,
         "default": 0.05,
-        "label": "Learning rate"
-      },
-      "n_estimators": {
-        "type": "number",
-        "min": 50,
-        "max": 5000,
-        "step": 50,
-        "default": 800,
-        "label": "Árboles (n_estimators)"
-      },
-      "max_depth": {
-        "type": "number",
-        "min": -1,
-        "max": 32,
-        "step": 1,
-        "default": -1,
-        "label": "Profundidad máx. (-1 = libre)"
+        "label": "Learning rate (si no se usa la grilla)"
       },
       "num_leaves": {
         "type": "number",
@@ -108,19 +105,30 @@
         "max": 512,
         "step": 1,
         "default": 63,
-        "label": "Hojas (num_leaves)"
+        "label": "Hojas (si no se usa la grilla)"
       },
-      "ridge_alpha": {
+      "trim_pct": {
         "type": "number",
-        "min": 0.001,
-        "max": 1000,
-        "default": 1.0,
-        "label": "Ridge alpha"
+        "min": 0,
+        "max": 10,
+        "step": 0.5,
+        "default": 1,
+        "label": "Recorte de USD/m² en train (percentil, calculado sólo con train)"
+      },
+      "excluir_pozo": {
+        "type": "bool",
+        "default": true,
+        "label": "Excluir pozo / en construcción (precios parciales)"
+      },
+      "comparar_aleatorio": {
+        "type": "bool",
+        "default": true,
+        "label": "Comparar con el protocolo anterior (split aleatorio con duplicados)"
       },
       "use_text": {
         "type": "bool",
         "default": false,
-        "label": "Agregar variables de texto (TF-IDF + SVD)"
+        "label": "Experimento: variables de texto TF-IDF + SVD (sin montos; no se guarda para predecir)"
       },
       "shap": {
         "type": "bool",

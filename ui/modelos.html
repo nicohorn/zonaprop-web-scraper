@@ -109,12 +109,18 @@
           <div><label class="f">Barrio</label><select name="barrio"></select></div>
           <div><label class="f">Tipo</label><select name="tipo"></select></div>
           <div><label class="f">Sup. total (m²)</label><input type="number" name="superficie_total" value="55" min="1"></div>
-          <div><label class="f">Sup. cubierta (m²)</label><input type="number" name="superficie_cubierta" value="50" min="1"></div>
+          <div><label class="f">Sup. cubierta (m²)</label><input type="number" name="superficie_cubierta" placeholder="opcional" min="1"></div>
           <div><label class="f">Ambientes</label><input type="number" name="ambientes" value="2" min="0"></div>
           <div><label class="f">Dormitorios</label><input type="number" name="dormitorios" value="1" min="0"></div>
           <div><label class="f">Baños</label><input type="number" name="banos" value="1" min="0"></div>
           <div><label class="f">Cocheras</label><input type="number" name="cocheras" value="0" min="0"></div>
           <div><label class="f">Expensas (ARS/mes)</label><input type="number" name="expensas" placeholder="opcional" min="0"></div>
+        </div>
+        <div class="grid2">
+          <label><input type="checkbox" name="a_estrenar"> A estrenar</label>
+          <label><input type="checkbox" name="balcon_terraza"> Balcón o terraza</label>
+          <label><input type="checkbox" name="amenities"> Amenities (pileta, SUM, parrilla…)</label>
+          <label><input type="checkbox" name="apto_credito"> Apto crédito</label>
         </div>
         <div class="controls"><button class="btn primary" id="pbtn" type="submit">Predecir</button></div>
       </form>
@@ -276,6 +282,7 @@ $('#pform').onsubmit = async (ev) => {
   ev.preventDefault();
   const f = $('#pform'), inputs = {};
   for (const k of ['barrio', 'tipo', 'superficie_total', 'superficie_cubierta', 'ambientes', 'dormitorios', 'banos', 'cocheras', 'expensas']) inputs[k] = f[k].value;
+  for (const k of ['a_estrenar', 'balcon_terraza', 'amenities', 'apto_credito']) inputs[k] = f[k].checked;
   $('#pbtn').disabled = true; $('#pout').innerHTML = '<p class="hint">Calculando…</p>';
   try {
     const r = await api('/api/ml/predict', { run: f.run.value, inputs });
@@ -283,7 +290,8 @@ $('#pform').onsubmit = async (ev) => {
     $('#pout').innerHTML = `<p style="font-size:22px;margin:12px 0 4px"><b>${usd(r.precio, r.moneda)}</b></p>
       <p class="hint">${usd(r.precio_m2, r.moneda)}/m² sobre ${fmt(r.superficie_usada)} m² · ${esc(r.operacion)}</p>
       <p>Rango probable (80 %): ${usd(r.rango_80[0], r.moneda)} – ${usd(r.rango_80[1], r.moneda)}<br>
-      <span class="hint">50 %: ${usd(r.rango_50[0], r.moneda)} – ${usd(r.rango_50[1], r.moneda)} · Ridge: ${usd(r.ridge_precio, r.moneda)}</span></p>
+      <span class="hint">50 %: ${usd(r.rango_50[0], r.moneda)} – ${usd(r.rango_50[1], r.moneda)} · Ridge: ${usd(r.ridge_precio, r.moneda)}${r.baseline_barrio_precio ? ` · mediana del barrio × m²: ${usd(r.baseline_barrio_precio, r.moneda)}` : ''}</span>
+      ${r.cobertura_test ? `<br><span class="hint">En test, el rango de 80 % contuvo el ${fmt(r.cobertura_test['80%'])} % de los precios.</span>` : ''}</p>
       <p class="hint">Error del modelo en test (${r.n_test} avisos, split ${esc(r.split)}): mediana ${fmt(g['MAPE_mediana_%'])} %, dentro de ±10 %: ${fmt(g['dentro_10%_%'])} %.</p>
       ${(r.avisos || []).map((w) => `<p class="err">${esc(w)}</p>`).join('')}`;
   } catch (e) { $('#pout').innerHTML = `<p class="err">${esc(e.message)}</p>`; }

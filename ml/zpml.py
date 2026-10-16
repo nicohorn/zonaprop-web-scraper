@@ -120,33 +120,77 @@ def load(include_details: bool = True, caba_only: bool = True, history: bool = F
 
 
 NUM_BASE = ["superficie_total", "superficie_cubierta", "ambientes", "dormitorios", "banos", "cocheras", "expensas"]
-NUM_DETAIL = ["antiguedad", "toilettes", "published_days"]
+NUM_DETAIL = ["antiguedad", "toilettes"]
+# Fuera a propósito: published_days, destacado (highlight), cantidad de fotos y posting_type. Describen
+# la publicación y no la propiedad, cambian con el tiempo y el formulario de predicción no los conoce.
+
+# Montos en el texto ("USD 120.000", "$ 350.000", "u$s 95 mil", "120k"): se borran antes de cualquier
+# variable de texto para que el modelo no lea el precio desde la descripción.
+_AMOUNT = re.compile(
+    r"(?:u\$s|us\$|usd|u\$d|dolares|dólares|\$|ars|pesos)\s*[\d.,]+(?:\s*(?:mil|k|millones?|m\b))?"
+    r"|[\d.,]+\s*(?:mil|k|millones?)?\s*(?:u\$s|us\$|usd|dolares|dólares|pesos)"
+    r"|\b\d{1,3}(?:[.,]\d{3})+\b|\b\d{5,}\b", re.I)
+
+
+def strip_amounts(s) -> str:
+    return _AMOUNT.sub(" ", str(s or ""))
+
+
+def _text_col(df: pd.DataFrame, col: str) -> pd.Series:
+    if col in df:
+        return df[col].fillna("").astype(str)
+    return pd.Series("", index=df.index, dtype=object)
+
+
+def listing_text(df: pd.DataFrame) -> pd.Series:
+    """Título + descripción corta (+ etiquetas), normalizado y sin montos."""
+    pills = df["pills"].map(lambda p: " ".join(p) if isinstance(p, list) else "") if "pills" in df else pd.Series("", index=df.index)
+    return (_text_col(df, "title") + " " + _text_col(df, "description_short") + " " + pills).map(strip_amounts).map(norm)
+
+
+# Atributos que también pide el formulario de predicción (casillas), así train y predicción ven lo mismo.
+FLAGS = {
+    "a_estrenar": r"a estrenar|\bestrenar\b",
+    "balcon_terraza": r"balcon|terraza",
+    "amenities": r"amenities|pileta|piscina|\bsum\b|gimnasio|parrilla|quincho|laundry",
+    "apto_credito": r"apto credito",
+}
+
+POZO = re.compile(r"\bpozo\b|pre ?-?venta|en construccion|avances? de obra|anticipo|entrega (?:en|estimada|prevista)|posesion (?:en|estimada|prevista)")
+
+
+def es_pozo(df: pd.DataFrame) -> pd.Series:
+    """Avisos de pozo / en construcción: el precio suele ser parcial (anticipo, cuotas)."""
+    t = (_text_col(df, "title") + " " + _text_col(df, "description_short")).map(norm)
+    dev = (df["posting_type"] == "DEVELOPMENT") if "posting_type" in df else False
+    return t.str.contains(POZO) | dev | (df.get("tipo_prop", pd.Series("", index=df.index)) == "emprendimiento")
 
 
 def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]]:
-    """Variables numéricas y categóricas a partir de lo que trae el scraper."""
+    """Variables numéricas y categóricas a partir de lo que trae el scraper (sin rasgos de la publicación)."""
     X = pd.DataFrame(index=df.index)
     for c in NUM_BASE + NUM_DETAIL:
         if c in df:
             X[c] = pd.to_numeric(df[c], errors="coerce")
     sup = superficie(df)
     X["superficie"] = sup
-    X["cub_ratio"] = (pd.to_numeric(df.get("superficie_cubierta"), errors="coerce") / pd.to_numeric(df.get("superficie_total"), errors="coerce")).clip(0, 1.5)
-    X["expensas_m2"] = X.get("expensas") / sup
-    X["fotos"] = df["photos"].map(lambda p: len(p) if isinstance(p, list) else np.nan) if "photos" in df else np.nan
+    X["log_superficie"] = np.log(sup.where(sup > 0))
+    X["cub_ratio"] = (num_col(df, "superficie_cubierta") / num_col(df, "superficie_total")).clip(0, 1.5)
+    if "expensas" in X:
+        X["expensas_m2"] = X["expensas"] / sup
+    if "ambientes" in X:
+        X["m2_por_ambiente"] = sup / X["ambientes"].where(X["ambientes"] > 0)
     if "amenities_flat" in df:
         X["amenities_count"] = df["amenities_flat"].map(lambda a: len(a) if isinstance(a, list) else np.nan)
-    X["destacado"] = df.get("highlight", pd.Series(index=df.index, dtype=object)).notna().astype(int)
-    X["emprendimiento"] = (df.get("posting_type") == "DEVELOPMENT").astype(int)
-    txt = (df.get("title", "").fillna("") + " " + df.get("description_short", "").fillna("")).map(norm)
-    for kw in ["a estrenar", "reciclar", "apto credito", "balcon", "terraza", "pileta", "amenities", "luminoso", "frente", "contrafrente", "cochera", "patio"]:
-        X["kw_" + kw.replace(" ", "_")] = txt.str.contains(kw, regex=False).astype(int)
+    txt = listing_text(df)
+    for k, rx in FLAGS.items():
+        X["kw_" + k] = txt.str.contains(rx).astype(int)
     cats = ["barrio", "tipo_prop"]
     for c in ["disposicion", "orientacion", "luminosidad"]:
         if c in df:
             cats.append(c)
     for c in cats:
-        X[c] = df[c].astype("category")
+        X[c] = df[c].astype("category") if c in df else pd.Series(np.nan, index=df.index, dtype="category")
     nums = [c for c in X.columns if c not in cats]
     X = X.dropna(axis=1, how="all")
     nums = [c for c in nums if c in X]
@@ -154,9 +198,16 @@ def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]
     return X, nums, cats
 
 
+def num_col(df: pd.DataFrame, col: str) -> pd.Series:
+    """Columna numérica; NaN si no existe (df.get devolvería None o un escalar)."""
+    if col in df:
+        return pd.to_numeric(df[col], errors="coerce").astype(float)
+    return pd.Series(np.nan, index=df.index, dtype=float)
+
+
 def superficie(df: pd.DataFrame) -> pd.Series:
-    cub = pd.to_numeric(df.get("superficie_cubierta"), errors="coerce")
-    tot = pd.to_numeric(df.get("superficie_total"), errors="coerce")
+    cub = num_col(df, "superficie_cubierta")
+    tot = num_col(df, "superficie_total")
     return cub.where(cub > 0, tot)
 
 

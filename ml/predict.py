@@ -23,8 +23,14 @@ import zpml
 RUNS = zpml.DATA / "ml" / "runs"
 LATEST = zpml.DATA / "ml" / "latest_price.json"
 
-DEFAULTS = {"barrio": "Palermo", "tipo": "departamento", "superficie_total": 55, "superficie_cubierta": 50,
+DEFAULTS = {"barrio": "Palermo", "tipo": "departamento", "superficie_total": 55, "superficie_cubierta": None,
             "ambientes": 2, "dormitorios": 1, "banos": 1, "cocheras": 0, "expensas": None}
+# Casillas del formulario -> mismas palabras clave que zpml.FLAGS busca en el texto del aviso
+FLAG_TEXT = {"a_estrenar": "a estrenar", "balcon_terraza": "balcon", "amenities": "amenities", "apto_credito": "apto credito"}
+
+
+def truthy(v):
+    return v is True or str(v).lower() in ("1", "true", "on", "si", "sí", "yes")
 
 
 def fail(msg):
@@ -56,33 +62,48 @@ def main():
         fail("Ese modelo se entrenó con variables de texto; el formulario no puede generarlas. Elegí otro.")
 
     x = {**DEFAULTS, **{k: v for k, v in (req.get("inputs") or {}).items() if v not in (None, "")}}
+    warn = []
+    levels = meta["levels"]
+    barrio = str(x["barrio"])
+    if barrio not in levels.get("barrio", []):
+        # Barrio no visto: el modelo lo trata como faltante (NaN) y se avisa; el rango se ensancha de hecho.
+        warn.append(f"El modelo no vio avisos en {barrio}: la predicción no usa el barrio (menos precisa).")
+    if x["tipo"] not in meta.get("tipos", []):
+        warn.append(f"El modelo no se entrenó con '{x['tipo']}'.")
+    if not meta.get("usa_superficie_cubierta", True) and x.get("superficie_cubierta") not in (None, ""):
+        # El listado no trae superficie cubierta: el modelo aprendió con la superficie total.
+        if num(x.get("superficie_total")) is None:
+            x["superficie_total"] = x["superficie_cubierta"]
+        x["superficie_cubierta"] = None
+    flags = " ".join(t for k, t in FLAG_TEXT.items() if truthy(x.get(k)))
     row = {
-        "id": "pred", "url": "", "title": "", "description_short": "", "photos": [], "highlight": None,
-        "posting_type": "PROPERTY", "barrio": x["barrio"], "tipo_prop": x["tipo"], "location": f"{x['barrio']}, Capital Federal",
+        "id": "pred", "url": "", "title": flags, "description_short": "", "pills": [],
+        "barrio": barrio, "tipo_prop": x["tipo"], "location": f"{barrio}, Capital Federal",
         **{k: num(x.get(k)) for k in ["superficie_total", "superficie_cubierta", "ambientes", "dormitorios", "banos", "cocheras", "expensas"]},
     }
     df = pd.DataFrame([row])
+    sup = zpml.superficie(df).iloc[0]
+    if not sup or not np.isfinite(sup) or sup <= 0:
+        fail("Indicá la superficie (total o cubierta).")
+    e = row["expensas"]
+    if e is not None and not (200 <= e / sup <= 30000):
+        warn.append("Expensas fuera de rango para la superficie: se ignoran.")
+        df["expensas"] = np.nan
     X, _, _ = zpml.build_features(df)
     X = X.reindex(columns=meta["columns"])
     for c in meta["cats"]:
-        X[c] = pd.Categorical(X[c].astype(object), categories=meta["levels"][c])
+        X[c] = pd.Categorical(X[c].astype(object), categories=levels[c])
     for c in meta["nums"]:
         if c in X:
             X[c] = pd.to_numeric(X[c], errors="coerce").astype(float)
 
-    sup = zpml.superficie(df).iloc[0]
-    if not sup or not np.isfinite(sup):
-        fail("Indicá la superficie (total o cubierta).")
     raw = float(bundle["gbm"].predict(X)[0])
-    ridge_raw = float(bundle["ridge"].predict(X.astype({c: object for c in meta["cats"]}))[0])
+    Xr = X.astype({c: object for c in meta["cats"]})
+    ridge_raw = float(bundle["ridge"].predict(Xr)[0])
     to_price = (lambda v: float(np.exp(v))) if meta["target"] == "log_price" else (lambda v: float(v * sup))
     price, ridge_price = to_price(raw), to_price(ridge_raw)
     q = meta["resid_log_quantiles"]
-    warn = []
-    if x["barrio"] not in meta["levels"].get("barrio", []):
-        warn.append(f"El modelo no vio avisos en {x['barrio']}: la predicción ignora el barrio.")
-    if x["tipo"] not in meta.get("tipos", []):
-        warn.append(f"El modelo no se entrenó con '{x['tipo']}'.")
+    bmed = meta.get("barrio_ppm2_mediana", {}).get(barrio)
     gb = next((v for k, v in meta["metricas_test"].items() if not k.startswith("Ridge")), {})
     print(json.dumps({
         "ok": True, "run": run, "modelo": meta["modelo"], "moneda": "USD" if meta["currency"] != "ARS" else "ARS",
@@ -90,7 +111,8 @@ def main():
         # rango: precio real / predicho en el test, percentiles 10–90 y 25–75
         "rango_80": [round(price * np.exp(q["q10"])), round(price * np.exp(q["q90"]))],
         "rango_50": [round(price * np.exp(q["q25"])), round(price * np.exp(q["q75"]))],
-        "ridge_precio": round(ridge_price), "error_test": gb, "n_train": meta["n_train"], "n_test": meta["n_test"],
+        "ridge_precio": round(ridge_price), "baseline_barrio_precio": round(bmed * sup) if bmed else None,
+        "cobertura_test": meta.get("cobertura_test_%"), "error_test": gb, "n_train": meta["n_train"], "n_test": meta["n_test"],
         "split": meta.get("split"), "avisos": warn, "inputs": x,
     }, ensure_ascii=False, default=lambda o: o.item() if hasattr(o, "item") else str(o)))
 
