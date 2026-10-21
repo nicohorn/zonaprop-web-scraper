@@ -160,7 +160,8 @@ const routes = {
   },
   // --- Modelos y Calidad de datos (src/ml.js) ---
   'GET /modelos': page('app.html'),
-  'GET /calidad': page('calidad.html'),
+  'GET /calidad': page('app.html'), // la app la abre en Datos › Calidad de datos
+  'GET /clasico/calidad': page('calidad.html'),
   'GET /api/ml/state': (req, res) => json(res, 200, { tasks: ML_TASKS, python: ml.pythonInfo(), ...ml.status(), runs: ml.listRuns() }),
   'GET /api/ml/run': (req, res) => {
     const run = ml.getRun(new URL(req.url, URL_).searchParams.get('id') || '');
@@ -191,6 +192,10 @@ const routes = {
   'GET /api/ml/doc': (req, res) => {
     const p = join(ROOT, 'docs', 'modelo_precio.md');
     json(res, 200, { name: 'docs/modelo_precio.md', markdown: existsSync(p) ? readFileSync(p, 'utf8') : '' });
+  },
+  'GET /api/ml/doc-calidad': (req, res) => {
+    const p = join(ROOT, 'docs', 'calidad_datos.md');
+    json(res, 200, { name: 'docs/calidad_datos.md', markdown: existsSync(p) ? readFileSync(p, 'utf8') : '' });
   },
   'POST /api/ml/predict': async (req, res) => {
     const body = await readBody(req);

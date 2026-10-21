@@ -17,7 +17,6 @@
     <a href="#experimentos" data-nav="experimentos"><span class="step">5</span>Experimentos</a>
     <a href="#docs" data-nav="docs"><span class="step">6</span>Historial y docs</a>
   </nav>
-  <a href="/calidad" style="font-weight:600;white-space:nowrap">Calidad de datos</a>
   <label class="msel" title="Elegí un modelo: toda la interfaz pasa a mostrar sólo ese modelo">
     <span>Modelo</span>
     <select id="model-select" aria-label="Modelo seleccionado"><option value="">Todos los modelos</option></select>
@@ -45,7 +44,7 @@
 
   <h2 class="section-title">Cómo recorrer el proyecto</h2>
   <ol class="flow">
-    <li><a href="#datos"><b>Datos</b><span>Qué se scrapeó, cuántos avisos hay y cómo se limpian.</span></a></li>
+    <li><a href="#datos"><b>Datos</b><span>Qué se scrapeó, cuántos avisos hay, cómo se limpian y si sirven para entrenar.</span></a></li>
     <li><a href="#predecir"><b>Predecir precio</b><span>Cargá un departamento y obtené un precio estimado con su rango.</span></a></li>
     <li><a href="#modelos"><b>Resultados por modelo</b><span>Una tarjeta por modelo (A–F) con la pregunta que responde.</span></a></li>
     <li><a href="#experimentos"><b>Experimentos</b><span>Todas las corridas, variantes y ablaciones, para comparar.</span></a></li>
@@ -70,11 +69,12 @@
   <div class="page-head">
     <div>
       <h1>Datos</h1>
-      <p class="lead">Los avisos salen de ZonaProp con un scraper propio. Acá ves el estado del dataset, lo descargás y, si querés, lanzás una nueva corrida.</p>
+      <p class="lead">Los avisos salen de ZonaProp con un scraper propio. Acá ves el estado del dataset, lo descargás, lanzás una nueva corrida y revisás si los datos sirven para entrenar.</p>
     </div>
   </div>
+  <div class="seg" role="tablist" id="datos-tabs" aria-label="Secciones de Datos"></div>
 
-  <div class="grid-main">
+  <div class="grid-main" id="datos-scraper">
     <div>
       <div class="card">
         <div class="card-head">
@@ -174,6 +174,7 @@
       </details>
     </div>
   </div>
+  <div class="stack" id="datos-calidad" hidden></div>
 </section>
 
 <!-- 3 · PREDECIR ========================================================================== -->
@@ -307,7 +308,7 @@
 </main>
 <footer class="foot">
   <span id="py" class="muted small"></span>
-  <span class="muted small">Pantallas anteriores: <a href="/clasico">scraper</a> · <a href="/clasico/modelos">modelos</a></span>
+  <span class="muted small">Pantallas anteriores: <a href="/clasico">scraper</a> · <a href="/clasico/modelos">modelos</a> · <a href="/clasico/calidad">calidad</a></span>
 </footer>
 <script src="/ui/scraper.js"></script>
 <script src="/ui/app.js"></script>
