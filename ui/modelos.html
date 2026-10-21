@@ -62,6 +62,7 @@
   <h1>ZonaProp · Modelos (CABA)</h1>
   <span id="py" class="hint"></span>
   <a href="/">← Scraper</a>
+  <a href="/calidad">Calidad de datos</a>
 </header>
 <main>
   <div>
@@ -175,7 +176,7 @@ async function api(path, body) {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function renderTabs() {
-  $('#tabs').innerHTML = Object.entries(state.tasks).map(([k, t]) => `<button class="tab" data-k="${k}" aria-selected="${k === current}">${esc(t.label)}${t.question ? `<small>${esc(t.question)}</small>` : ''}</button>`).join('');
+  $('#tabs').innerHTML = Object.entries(state.tasks).filter(([, t]) => !t.page).map(([k, t]) => `<button class="tab" data-k="${k}" aria-selected="${k === current}">${esc(t.label)}${t.question ? `<small>${esc(t.question)}</small>` : ''}</button>`).join('');
   $('#tabs').querySelectorAll('.tab').forEach((b) => b.onclick = () => { current = b.dataset.k; renderTabs(); renderForm(); });
 }
 
@@ -258,10 +259,10 @@ function renderStatus() {
     $('#lastmsg').innerHTML = s.last.status === 'ok' ? `<p class="ok">Última corrida OK (${esc(s.last.id)})</p>` : `<p class="err">Última corrida: ${esc(s.last.status)} — ${esc(s.last.error || '')}</p>`;
   }
   const byTask = {};
-  for (const r of s.runs) (byTask[r.task] ||= []).push(r);
+  for (const r of s.runs) if (!s.tasks[r.task]?.page) (byTask[r.task] ||= []).push(r);
   $('#runs').innerHTML = s.runs.length ? Object.entries(byTask).map(([t, rs]) => `<h3>${esc(s.tasks[t]?.label || t)} (${rs.length})</h3>` + rs.map((r) => `<div><a data-id="${esc(r.id)}">${esc(r.id)}</a> <span class="hint">${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</span></div>`).join('')).join('') : '<p class="hint">Todavía no hay corridas.</p>';
   $('#runs').querySelectorAll('a').forEach((a) => a.onclick = () => showRun(a.dataset.id));
-  if (wasRunning && !s.running && s.last) { showRun(s.last.id); loadPriceModels(); }
+  if (wasRunning && !s.running && s.last && !s.tasks[s.last.task]?.page) { showRun(s.last.id); loadPriceModels(); }
   wasRunning = s.running;
 }
 
@@ -355,7 +356,7 @@ async function loadCompare() {
     const t = Object.entries(full.result?.tablas || {}).find(([k]) => k.startsWith('Ablación'));
     if (t) h += `<h2>A2 · Ablación · ${esc(r.id)}</h2>` + tableHtml(t[1]);
   }
-  const other = runs.filter((r) => !['price', 'price_ablation'].includes(r.task));
+  const other = runs.filter((r) => !['price', 'price_ablation'].includes(r.task) && !state?.tasks[r.task]?.page);
   h += '<h2>B–F y otras corridas</h2>' + tableHtml({ columns: ['corrida', 'modelo', 'estado', 'resumen'], rows: other.map((r) => [r.id, state?.tasks[r.task]?.label || r.task, r.status,
     r.error || Object.entries(r.resumen || {}).map(([k, v]) => `${k}: ${typeof v === 'number' ? fmt(v) : v}`).join(' · ')]) });
   $('#compare').innerHTML = h;
@@ -390,7 +391,7 @@ function md(src) {
 }
 async function loadHist() {
   const d = await api('/api/ml/historial');
-  $('#hist').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)} ? orden cronol?gico; cada corrida sigue disponible en ?Comparar corridas?</p>` + md(d.markdown) : '<p class="err">No se encontr? docs/historial_modelo_precio.md</p>';
+  $('#hist').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)} · orden cronológico; cada corrida sigue disponible en «Comparar corridas»</p>` + md(d.markdown) : '<p class="err">No se encontró docs/historial_modelo_precio.md</p>';
 }
 async function loadDoc() {
   const d = await api('/api/ml/doc');

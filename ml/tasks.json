@@ -563,5 +563,86 @@
     },
     "question": "¿Cuánto tarda un aviso en desaparecer?",
     "use": "Requiere re-scrapes con seguimiento de cambios."
+  },
+  "quality": {
+    "label": "Calidad de datos (EDA)",
+    "page": "calidad",
+    "question": "¿Estos datos sirven para entrenar el modelo de precio?",
+    "use": "Antes de entrenar y después de cada scrape.",
+    "desc": "Seis chequeos sobre los datos scrapeados: controles básicos de la extracción (completitud, formato, unicidad, rangos, consistencia y concordancia con la URL), embudo de limpieza por barrio, duplicados y fuga train/test, faltantes informativos (MNAR), representatividad por barrio, y deriva del parser y cobertura del scraper.",
+    "params": {
+      "operacion": {
+        "type": "select",
+        "options": [
+          "venta",
+          "alquiler"
+        ],
+        "default": "venta",
+        "label": "Operación"
+      },
+      "tipo": {
+        "type": "select",
+        "options": [
+          "todos",
+          "departamento",
+          "casa",
+          "ph",
+          "terreno",
+          "local",
+          "oficina",
+          "cochera"
+        ],
+        "default": "departamento",
+        "label": "Tipo"
+      },
+      "duplicados": {
+        "type": "select",
+        "options": [
+          "v2_direccion_texto",
+          "v1_huella"
+        ],
+        "default": "v2_direccion_texto",
+        "label": "Regla de duplicados (la misma que el modelo A)"
+      },
+      "excluir_pozo": {
+        "type": "bool",
+        "default": true,
+        "label": "Excluir pozo / en construcción (como el modelo A)"
+      },
+      "min_barrio": {
+        "type": "number",
+        "min": 5,
+        "max": 1000,
+        "step": 5,
+        "default": 30,
+        "label": "Mínimo de avisos por barrio"
+      },
+      "umbral_deriva_pp": {
+        "type": "number",
+        "min": 2,
+        "max": 80,
+        "step": 1,
+        "default": 15,
+        "label": "Umbral de deriva del parser (puntos porcentuales de campos vacíos)"
+      },
+      "ventana": {
+        "type": "select",
+        "options": [
+          "auto",
+          "hora",
+          "dia"
+        ],
+        "default": "auto",
+        "label": "Franja de tiempo para la deriva"
+      },
+      "seed": {
+        "type": "number",
+        "min": 0,
+        "max": 1000000,
+        "step": 1,
+        "default": 42,
+        "label": "Semilla (split y bootstrap)"
+      }
+    }
   }
 }

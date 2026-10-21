@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TASKS, sanitizeParams, MlRunner, pythonPath, ROOT } from '../src/ml.js';
 
-test('tasks.json: las 7 tareas con defaults válidos', () => {
-  assert.deepEqual(Object.keys(TASKS).sort(), ['anomaly', 'price', 'price_ablation', 'segments', 'survival', 'text', 'yields']);
+test('tasks.json: las 8 tareas con defaults válidos', () => {
+  assert.deepEqual(Object.keys(TASKS).sort(), ['anomaly', 'price', 'price_ablation', 'quality', 'segments', 'survival', 'text', 'yields']);
   for (const [task, t] of Object.entries(TASKS)) {
     assert.ok(t.label && t.params, task);
     assert.deepEqual(sanitizeParams(task, {}), Object.fromEntries(Object.entries(t.params).map(([k, s]) => [k, s.default])));
@@ -56,7 +56,7 @@ test('run.py: entrena price y yields sobre datos sintéticos', { skip: !hasDeps 
   }
   lines.push(JSON.stringify({ id: '9', url: 'x', price: 1, price_currency: 'USD', location: 'Pilar, GBA Norte', operacion: 'venta' }));
   writeFileSync(join(data, 'listings.jsonl'), lines.join('\n') + '\n');
-  for (const [task, params] of [['price_ablation', { variantes: ['v1', 'v3_ppm2_huber'], cv_folds: 3 }], ['price', { shap: false, tune: false }], ['yields', { min_n: 3 }], ['segments', {}]]) {
+  for (const [task, params] of [['price_ablation', { variantes: ['v1', 'v3_ppm2_huber'], cv_folds: 3 }], ['price', { shap: false, tune: false }], ['yields', { min_n: 3 }], ['segments', {}], ['quality', { min_barrio: 20 }]]) {
     const dir = join(data, 'ml', 'runs', 'run-' + task);
     spawnSync(process.execPath, ['-e', `require('fs').mkdirSync(${JSON.stringify(dir)},{recursive:true});require('fs').writeFileSync(${JSON.stringify(join(dir, 'params.json'))},${JSON.stringify(JSON.stringify(params))})`]);
     const r = spawnSync(py, [join(ROOT, 'ml', 'run.py'), task, '--run-dir', dir], { encoding: 'utf8', env: { ...process.env, ZP_DATA_DIR: data, PYTHONUTF8: '1' } });
@@ -64,6 +64,10 @@ test('run.py: entrena price y yields sobre datos sintéticos', { skip: !hasDeps 
     assert.equal(res.status, 'ok', `${task}: ${res.error}\n${r.stderr}`);
     assert.ok(res.artifacts.every((a) => existsSync(join(dir, a))));
   }
+  // calidad de datos: seis secciones con estado y hallazgos
+  const q = JSON.parse(readFileSync(join(data, 'ml', 'runs', 'run-quality', 'result.json'), 'utf8'));
+  assert.deepEqual(q.secciones.map((s) => s.id), ['basicos', 'embudo', 'duplicados', 'faltantes', 'representatividad', 'scraper']);
+  assert.ok(q.secciones.every((s) => ['ok', 'atencion', 'critico', 'sin_datos'].includes(s.estado) && s.hallazgos.length));
   // modelo guardado + predicción
   const env = { ...process.env, ZP_DATA_DIR: data, PYTHONUTF8: '1' };
   assert.equal(JSON.parse(readFileSync(join(data, 'ml', 'latest_price.json'), 'utf8')).run, 'run-price');

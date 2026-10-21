@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZonaProp · Calidad de datos</title>
+<style>
+  :root { --bg:#f5f6f8; --panel:#fff; --ink:#1c2330; --muted:#667085; --line:#e2e5ea; --accent:#e8590c; --accent-ink:#fff; --chip:#eef0f4;
+          --ok:#1a7f4b; --ok-bg:#e3f4ea; --warn:#9a6200; --warn-bg:#fdf1d8; --crit:#c0392b; --crit-bg:#fbe5e2; --na:#667085; --na-bg:#eef0f4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151a; --panel:#1b2027; --ink:#e6e9ee; --muted:#98a2b3; --line:#2c333d; --chip:#262d37;
+          --ok:#4cc38a; --ok-bg:#16301f; --warn:#f0b54a; --warn-bg:#352a12; --crit:#ff7b6b; --crit-bg:#3a1c19; --na:#98a2b3; --na-bg:#262d37; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 24px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  header a { color:var(--accent); font-weight:600; text-decoration:none; }
+  main { padding:20px 24px; max-width:1400px; margin:0 auto; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  section + section, .views + section { margin-top:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 12px; }
+  h3 { font-size:15px; margin:22px 0 8px; }
+  .hint { color:var(--muted); font-size:13px; }
+  .err { color:var(--crit); white-space:pre-wrap; font-size:13px; }
+  .params { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:4px 14px; align-items:end; }
+  label.f { display:block; font-weight:600; font-size:12.5px; margin:8px 0 4px; }
+  input, select { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:inherit; font-size:14px; }
+  input[type=checkbox] { width:auto; }
+  .chk { display:flex; gap:8px; align-items:center; font-size:13.5px; padding:8px 0; }
+  .btn { font:inherit; font-weight:600; border-radius:8px; padding:9px 18px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .controls { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; align-items:center; }
+  .controls select { width:auto; min-width:260px; }
+  .bar { height:10px; background:var(--chip); border-radius:999px; overflow:hidden; margin:12px 0 6px; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .4s; }
+  .views { display:flex; gap:6px; flex-wrap:wrap; margin-top:16px; }
+  .tab { background:var(--chip); border:1px solid transparent; border-radius:8px; padding:8px 13px; cursor:pointer; font:inherit; font-size:14px; color:var(--ink); display:flex; gap:7px; align-items:center; }
+  .tab[aria-selected=true] { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); font-weight:600; }
+  .badge { display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 10px 2px 7px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+  .badge::before { content:var(--icon); display:inline-grid; place-items:center; width:16px; height:16px; border-radius:50%; font-size:11px; font-weight:800; color:var(--panel); background:var(--c); }
+  .tab .badge { padding:0; background:none !important; font-size:0; gap:0; } .tab .badge::before { font-size:11px; }
+  .b-ok { --c:var(--ok); color:var(--ok); background:var(--ok-bg); --icon:"✓"; }
+  .b-atencion { --c:var(--warn); color:var(--warn); background:var(--warn-bg); --icon:"!"; }
+  .b-critico { --c:var(--crit); color:var(--crit); background:var(--crit-bg); --icon:"✕"; }
+  .b-sin_datos { --c:var(--na); color:var(--na); background:var(--na-bg); --icon:"–"; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; background:var(--panel); display:flex; flex-direction:column; gap:8px; }
+  .card:hover { border-color:var(--accent); }
+  .card h4 { margin:0; font-size:15px; }
+  .card p { margin:0; font-size:13.5px; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin:14px 0; }
+  .kpi { background:var(--chip); border-radius:9px; padding:10px 12px; }
+  .kpi .l { font-size:12px; color:var(--muted); }
+  .kpi .v { font-size:21px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.25; }
+  .kpi .n { font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+  ul.find { margin:6px 0 0; padding-left:20px; } ul.find li { margin:4px 0; }
+  .mitig { border-left:3px solid var(--accent); background:color-mix(in srgb,var(--accent) 7%,transparent); padding:9px 12px; border-radius:0 8px 8px 0; font-size:14px; margin:14px 0; }
+  .figs { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr)); gap:14px; align-items:start; }
+  img.art { width:100%; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border-bottom:1px solid var(--line); padding:4px 8px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--panel); }
+  td.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .tablewrap { overflow:auto; max-height:460px; margin:6px 0 4px; }
+  .thead { display:flex; justify-content:space-between; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .thead a, td a { color:var(--accent); font-size:13px; }
+  .q { font-size:16px; margin:2px 0 4px; }
+  @media (max-width:640px) { main, header { padding-left:16px; padding-right:16px; } .controls select { min-width:0; width:100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ZonaProp · Calidad de datos (CABA)</h1>
+  <span id="py" class="hint"></span>
+  <a href="/">← Scraper</a>
+  <a href="/modelos">Modelos</a>
+</header>
+<main>
+  <section>
+    <h2>Reporte de calidad de los datos que entrenan el modelo A</h2>
+    <p class="hint" id="desc"></p>
+    <form id="form" class="params"></form>
+    <div class="controls">
+      <button class="btn primary" id="run">Generar reporte</button>
+      <button class="btn" id="cancel" disabled>Cancelar</button>
+      <button class="btn" id="defaults">Valores por defecto</button>
+      <select id="runs" aria-label="Reportes anteriores"></select>
+    </div>
+    <div id="prog" hidden><div class="bar"><div id="barfill"></div></div><div id="step" class="hint"></div></div>
+    <div id="msg"></div>
+  </section>
+  <nav class="views" id="views"></nav>
+  <section id="view"><p class="hint">Cargando…</p></section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const TASK = 'quality';
+const ESTADO = { ok: 'OK', atencion: 'Atención', critico: 'Crítico', sin_datos: 'Sin datos' };
+let state = null, report = null, reportId = null, view = 'resumen', wasRunning = false;
+let saved = {}; try { saved = JSON.parse(localStorage.getItem('qualityParams') || '{}'); } catch { /* sin storage */ }
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const badge = (e) => `<span class="badge b-${esc(e)}">${esc(ESTADO[e] || e)}</span>`;
+const file = (name) => `/api/ml/file?id=${encodeURIComponent(reportId)}&name=${encodeURIComponent(name)}`;
+function fmt(v) {
+  if (typeof v !== 'number') return esc(v);
+  const a = Math.abs(v);
+  if (a > 0 && a < 1e-3) return v.toExponential(1).replace('.', ',');
+  return a >= 1000 ? Math.round(v).toLocaleString('es-AR') : v.toLocaleString('es-AR', { maximumFractionDigits: a < 1 ? 3 : 2 });
+}
+function tableHtml(t) {
+  return `<div class="tablewrap"><table><thead><tr>${t.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${t.rows.map((r) => `<tr>${r.map((v) => {
+    if (typeof v === 'string' && v.startsWith('http')) return `<td><a href="${esc(v)}" target="_blank" rel="noopener">abrir</a></td>`;
+    return `<td class="${typeof v === 'number' ? 'n' : ''}">${v == null ? '' : fmt(v)}</td>`;
+  }).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+// --- Parámetros (de ml/tasks.json, igual que en Modelos) ---------------------------------------
+function renderForm(useDefaults = false) {
+  const t = state.tasks[TASK];
+  $('#desc').textContent = t.desc;
+  const vals = useDefaults ? {} : (saved || {});
+  $('#form').innerHTML = Object.entries(t.params).map(([k, s]) => {
+    const v = vals[k] ?? s.default;
+    if (s.type === 'bool') return `<label class="chk"><input type="checkbox" name="${k}" ${v ? 'checked' : ''}> ${esc(s.label)}</label>`;
+    if (s.type === 'select') return `<div><label class="f">${esc(s.label)}</label><select name="${k}">${s.options.map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+    return `<div><label class="f">${esc(s.label)}</label><input type="number" name="${k}" value="${v}" min="${s.min ?? ''}" max="${s.max ?? ''}" step="${s.step ?? 'any'}"></div>`;
+  }).join('');
+}
+function readForm() {
+  const out = {};
+  for (const [k, s] of Object.entries(state.tasks[TASK].params)) {
+    const el = $('#form').querySelector(`[name="${k}"]`);
+    out[k] = s.type === 'bool' ? el.checked : s.type === 'number' ? (el.value === '' ? s.default : Number(el.value)) : el.value;
+  }
+  return out;
+}
+
+// --- Estado del proceso y lista de reportes --------------------------------------------------------
+function renderStatus() {
+  const s = state, j = s.job, py = s.python;
+  $('#py').innerHTML = py.ok ? `Python ${esc(py.version)}` : '<span class="err">Python no disponible: instalá ml/requirements.txt (ver README)</span>';
+  const otro = s.running && j?.task !== TASK;
+  $('#run').disabled = s.running || !py.ok;
+  $('#cancel').disabled = !(s.running && j?.task === TASK);
+  $('#prog').hidden = !(j && j.task === TASK);
+  if (j && j.task === TASK) { $('#barfill').style.width = `${j.pct}%`; $('#step').textContent = `${j.pct}% · ${j.step}`; }
+  if (otro) $('#msg').innerHTML = `<p class="hint">Hay un entrenamiento de Modelos en curso (${esc(s.tasks[j.task]?.label || j.task)}); el reporte se puede generar cuando termine.</p>`;
+  else if (!s.running && s.last?.task === TASK && s.last.status !== 'ok') $('#msg').innerHTML = `<p class="err">Último reporte: ${esc(s.last.status)} — ${esc(s.last.error || '')}</p>`;
+  else if (!s.running) $('#msg').innerHTML = '';
+  const runs = s.runs.filter((r) => r.task === TASK);
+  const cur = reportId || runs.find((r) => r.status === 'ok')?.id;
+  $('#runs').innerHTML = runs.length ? runs.map((r) => `<option value="${esc(r.id)}" ${r.id === cur ? 'selected' : ''}>${esc(r.id)} · ${esc(r.status)}${r.seconds ? ` · ${r.seconds}s` : ''}</option>`).join('') : '<option value="">Todavía no hay reportes</option>';
+  if (wasRunning && !s.running && s.last?.task === TASK) loadReport(s.last.id);
+  wasRunning = s.running && j?.task === TASK;
+}
+async function refresh() {
+  try { state = await api('/api/ml/state'); renderStatus(); } catch { $('#py').textContent = 'Sin conexión con el servidor'; }
+  setTimeout(refresh, state?.running ? 800 : 4000);
+}
+
+// --- Reporte -----------------------------------------------------------------------------------
+async function loadReport(id) {
+  if (!id) return;
+  const { result } = await api(`/api/ml/run?id=${encodeURIComponent(id)}`);
+  reportId = id; report = result;
+  if ($('#runs').value !== id) $('#runs').value = id;
+  if (!report || report.status !== 'ok') {
+    $('#views').innerHTML = '';
+    $('#view').innerHTML = `<h2>Reporte ${esc(id)}</h2>` + (report ? `<p class="err">${esc(report.error)}</p>${report.traceback ? `<details><summary class="hint">Traceback</summary><pre>${esc(report.traceback)}</pre></details>` : ''}` : '<p class="hint">Sin resultado (cancelado o en curso).</p>');
+    return;
+  }
+  if (view !== 'resumen' && !report.secciones.some((s) => s.id === view)) view = 'resumen';
+  renderViews(); renderView();
+}
+function renderViews() {
+  const tabs = [['resumen', 'Resumen', report.estado_general], ...report.secciones.map((s) => [s.id, s.titulo.split(':')[0], s.estado])];
+  $('#views').innerHTML = tabs.map(([k, l, e]) => `<button class="tab" data-v="${k}" aria-selected="${k === view}" title="${esc(ESTADO[e] || e)}">${badge(e)}${esc(l)}</button>`).join('');
+  $('#views').querySelectorAll('.tab').forEach((b) => b.onclick = () => { view = b.dataset.v; renderViews(); renderView(); });
+}
+function renderView() {
+  if (view === 'resumen') return renderResumen();
+  const s = report.secciones.find((x) => x.id === view);
+  let h = `<div class="thead"><h2>${esc(s.titulo)}</h2>${badge(s.estado)}</div><p class="q"><b>${esc(s.pregunta)}</b></p>`;
+  h += `<div class="kpis">${s.kpis.map((k) => `<div class="kpi"><div class="l">${esc(k.label)}</div><div class="v">${esc(k.valor)}</div>${k.nota ? `<div class="n">${esc(k.nota)}</div>` : ''}</div>`).join('')}</div>`;
+  h += `<h3>Hallazgos</h3><ul class="find">${s.hallazgos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  if (s.mitigacion) h += `<div class="mitig"><b>Qué implica para el modelo:</b> ${esc(s.mitigacion)}</div>`;
+  if (s.imagenes.length) h += `<div class="figs">${s.imagenes.map((a) => `<img class="art" src="${file(a)}" alt="${esc(a)}" loading="lazy">`).join('')}</div>`;
+  for (const [name, t] of Object.entries(s.tablas)) {
+    h += `<div class="thead"><h3>${esc(name)}</h3><span class="hint">${t.n > t.rows.length ? `${t.rows.length} de ${t.n} filas · ` : ''}<a href="${file(t.csv)}">CSV</a></span></div>` + tableHtml(t);
+  }
+  $('#view').innerHTML = h;
+}
+function renderResumen() {
+  const p = report.params || {};
+  let h = `<div class="thead"><h2>Resumen · ${esc(reportId)}</h2>${badge(report.estado_general)}</div>`;
+  h += `<p class="hint">${esc(p.operacion)} · ${esc(p.tipo)} · duplicados ${esc(p.duplicados)}${p.excluir_pozo ? ' · sin pozo' : ''} · generado en ${report.seconds}s.
+    El estado mide el problema en los datos; cada sección explica si el pipeline del modelo A ya lo mitiga.</p>`;
+  h += `<div class="cards">${report.secciones.map((s) => `<div class="card" data-v="${esc(s.id)}" tabindex="0">
+      <div class="thead"><h4>${esc(s.titulo)}</h4>${badge(s.estado)}</div>
+      <p>${esc(s.hallazgos[0] || '')}</p>
+      ${s.kpis.slice(0, 2).map((k) => `<p class="hint">${esc(k.label)}: <b style="color:var(--ink)">${esc(k.valor)}</b></p>`).join('')}
+    </div>`).join('')}</div>`;
+  $('#view').innerHTML = h;
+  $('#view').querySelectorAll('.card').forEach((c) => {
+    const go = () => { view = c.dataset.v; renderViews(); renderView(); window.scrollTo({ top: $('#views').offsetTop - 70, behavior: 'smooth' }); };
+    c.onclick = go; c.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  });
+}
+
+$('#run').onclick = async () => {
+  const params = readForm();
+  saved = params; try { localStorage.setItem('qualityParams', JSON.stringify(params)); } catch { /* nada */ }
+  $('#msg').innerHTML = '';
+  try { await api('/api/ml/start', { task: TASK, params }); state = await api('/api/ml/state'); renderStatus(); } catch (e) { $('#msg').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+};
+$('#cancel').onclick = () => api('/api/ml/cancel', {});
+$('#defaults').onclick = () => { saved = {}; try { localStorage.removeItem('qualityParams'); } catch { /* nada */ } renderForm(true); };
+$('#runs').onchange = () => loadReport($('#runs').value);
+
+(async () => {
+  state = await api('/api/ml/state');
+  renderForm(); renderStatus();
+  const first = state.runs.find((r) => r.task === TASK && r.status === 'ok');
+  if (first) loadReport(first.id);
+  else $('#view').innerHTML = '<h2>Sin reportes</h2><p>Tocá <b>Generar reporte</b>. Lee <code>data/listings.jsonl</code>, <code>frontier.json</code> y <code>failures.jsonl</code>. Tarda menos de un minuto.</p>';
+  setTimeout(refresh, 1500);
+})();
+</script>
+</body>
+</html>

@@ -535,8 +535,33 @@ def task_price_ablation(p):
             "mezcla": mezcla, "tablas": tablas}
 
 
+def task_quality(p):
+    """EDA de calidad de datos (página /calidad): los cinco chequeos de ml/calidad.py."""
+    import calidad
+    secs = calidad.reporte(p, progress)
+    progress(90, "Guardando gráficos y tablas")
+    resumen = calidad.resumen(secs)
+    out = []
+    for s in secs:
+        imgs = []
+        for name, fig in s.pop("figuras").items():
+            fn = f"{s['id']}_{name}.png"
+            save_fig(fig, fn)
+            imgs.append(fn)
+        tabs = {}
+        for i, (name, t) in enumerate(s.pop("tablas").items(), 1):
+            fn = f"{s['id']}_{i}.csv"
+            save_csv(t, fn)
+            tabs[name] = {**table(t, 60), "csv": fn, "n": int(len(t))}
+        out.append({**s, "imagenes": imgs, "tablas": tabs})
+    save_csv(resumen, "resumen.csv")
+    estados = [s["estado"] for s in out]
+    return {"estado_general": calidad.peor(*estados),
+            "criticos": estados.count("critico"), "atencion": estados.count("atencion"), "secciones": out}
+
+
 TASK_FUNCS = {"price": task_price, "price_ablation": task_price_ablation, "anomaly": task_anomaly, "yields": task_yields, "segments": task_segments,
-              "text": task_text, "survival": task_survival}
+              "text": task_text, "survival": task_survival, "quality": task_quality}
 
 
 def with_defaults(task: str, raw: dict) -> dict:

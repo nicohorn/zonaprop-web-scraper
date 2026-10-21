@@ -25,55 +25,59 @@ PPM2_MIN, PPM2_MAX = 500, 15_000       # USD/m² (fuera: pesos como dólares, pr
 EXP_M2_MIN, EXP_M2_MAX = 200, 30_000   # expensas ARS/m²/mes; fuera de rango se toman como faltantes
 
 
-def _paso(pasos, nombre, d, antes):
-    pasos.append({"paso": nombre, "filas": int(len(d)), "quitadas": int(antes - len(d))})
+def _paso(pasos, nombre, d, antes, traza=None):
+    """antes: índice de d antes del paso. traza (dict): índice de cada fila quitada -> nombre del paso."""
+    if traza is not None:
+        traza.update(dict.fromkeys(antes.difference(d.index), nombre))
+    pasos.append({"paso": nombre, "filas": int(len(d)), "quitadas": int(len(antes) - len(d))})
 
 
 def limpiar(df: pd.DataFrame, operacion="venta", currency="USD", tipo="departamento", fx=1450.0,
-            excluir_pozo=True, deduplicar=True) -> tuple[pd.DataFrame, list[dict]]:
-    """Devuelve (avisos limpios con columnas price_x, sup, ppm2, grupo) y la tabla de pasos."""
+            excluir_pozo=True, deduplicar=True, traza: dict | None = None) -> tuple[pd.DataFrame, list[dict]]:
+    """Devuelve (avisos limpios con columnas price_x, sup, ppm2, grupo) y la tabla de pasos.
+    traza: si se pasa un dict, anota el paso que quitó cada fila (índice -> paso); lo usa ml/calidad.py."""
     pasos: list[dict] = []
     d = df.copy()
-    _paso(pasos, "Avisos de CABA (última versión de cada id)", d, len(d))
-    n = len(d); d = d[d["operacion"] == operacion]; _paso(pasos, f"Operación = {operacion}", d, n)
+    _paso(pasos, "Avisos de CABA (última versión de cada id)", d, d.index)
+    n = d.index; d = d[d["operacion"] == operacion]; _paso(pasos, f"Operación = {operacion}", d, n, traza)
     if tipo and tipo != "todos":
-        n = len(d); d = d[d["tipo_prop"] == tipo]; _paso(pasos, f"Tipo = {tipo}", d, n)
+        n = d.index; d = d[d["tipo_prop"] == tipo]; _paso(pasos, f"Tipo = {tipo}", d, n, traza)
     d["price"] = pd.to_numeric(d["price"], errors="coerce")
-    n = len(d)
+    n = d.index
     if currency == "convertir_a_USD":
         d = d[d["price_currency"].isin(["USD", "ARS"])].copy()
         d["price_x"] = np.where(d["price_currency"] == "ARS", d["price"] / fx, d["price"])
     else:
         d = d[d["price_currency"] == currency].copy()
         d["price_x"] = d["price"]
-    _paso(pasos, f"Moneda = {currency}", d, n)
+    _paso(pasos, f"Moneda = {currency}", d, n, traza)
 
     for c in ["superficie_total", "superficie_cubierta", "ambientes", "dormitorios", "banos", "cocheras", "expensas"]:
         d[c] = zpml.num_col(d, c)
     d["sup"] = zpml.superficie(d)
-    n = len(d); d = d[(d["price_x"] > 0) & (d["sup"] > 0)]; _paso(pasos, "Con precio y superficie", d, n)
+    n = d.index; d = d[(d["price_x"] > 0) & (d["sup"] > 0)]; _paso(pasos, "Con precio y superficie", d, n, traza)
 
-    n = len(d)
+    n = d.index
     cub_ok = d["superficie_cubierta"].isna() | d["superficie_total"].isna() | (d["superficie_cubierta"] <= d["superficie_total"] * 1.05)
     d = d[d["sup"].between(SUP_MIN, SUP_MAX) & cub_ok]
-    _paso(pasos, f"Superficie entre {SUP_MIN} y {SUP_MAX} m² y cubierta ≤ total", d, n)
+    _paso(pasos, f"Superficie entre {SUP_MIN} y {SUP_MAX} m² y cubierta ≤ total", d, n, traza)
 
-    n = len(d)
+    n = d.index
     amb, dor, ban = d["ambientes"], d["dormitorios"], d["banos"]
     ok = (amb.isna() | amb.between(1, 10)) & (dor.isna() | amb.isna() | (dor <= amb)) & (ban.isna() | ban.between(1, 6))
     ok &= amb.isna() | (d["sup"] / amb >= 9)   # menos de 9 m² por ambiente: m² o ambientes mal cargados
     d = d[ok]
-    _paso(pasos, "Ambientes 1–10, dormitorios ≤ ambientes, baños 1–6, ≥ 9 m² por ambiente", d, n)
+    _paso(pasos, "Ambientes 1–10, dormitorios ≤ ambientes, baños 1–6, ≥ 9 m² por ambiente", d, n, traza)
 
     d["ppm2"] = d["price_x"] / d["sup"]
     if operacion == "venta" and currency != "ARS":
-        n = len(d)
+        n = d.index
         d = d[d["price_x"].between(PRECIO_MIN, PRECIO_MAX) & d["ppm2"].between(PPM2_MIN, PPM2_MAX)]
-        _paso(pasos, f"Precio USD {PRECIO_MIN:,}–{PRECIO_MAX:,} y USD/m² {PPM2_MIN}–{PPM2_MAX:,}", d, n)
+        _paso(pasos, f"Precio USD {PRECIO_MIN:,}–{PRECIO_MAX:,} y USD/m² {PPM2_MIN}–{PPM2_MAX:,}", d, n, traza)
 
     d["pozo"] = zpml.es_pozo(d)
     if excluir_pozo:
-        n = len(d); d = d[~d["pozo"]]; _paso(pasos, "Sin pozo / en construcción / emprendimiento (precio parcial)", d, n)
+        n = d.index; d = d[~d["pozo"]]; _paso(pasos, "Sin pozo / en construcción / emprendimiento (precio parcial)", d, n, traza)
 
     # Valores sueltos implausibles -> faltante (no se descarta el aviso)
     em2 = d["expensas"] / d["sup"]
@@ -85,11 +89,11 @@ def limpiar(df: pd.DataFrame, operacion="venta", currency="USD", tipo="departame
     d["grupo"] = huella(d, con_precio=False)
     d = d.sort_values(["date_posted", "scraped_at"], na_position="first")
     if deduplicar == "huella":   # regla v1 (13,7 %): sólo la huella; ~30 % de precisión en la muestra revisada
-        n = len(d); d = d.drop_duplicates("huella", keep="last"); _paso(pasos, "Sin casi-duplicados v1 (sólo huella)", d, n)
+        n = d.index; d = d.drop_duplicates("huella", keep="last"); _paso(pasos, "Sin casi-duplicados v1 (sólo huella)", d, n, traza)
     elif deduplicar:
         d["dup_id"] = dup_ids(d)
-        n = len(d); d = d.drop_duplicates("dup_id", keep="last")
-        _paso(pasos, "Sin duplicados (misma huella Y misma calle/altura o texto casi igual)", d, n)
+        n = d.index; d = d.drop_duplicates("dup_id", keep="last")
+        _paso(pasos, "Sin duplicados (misma huella Y misma calle/altura o texto casi igual)", d, n, traza)
     return d.sort_index(), pasos
 
 

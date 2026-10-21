@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const TASKS = JSON.parse(readFileSync(join(ROOT, 'ml', 'tasks.json'), 'utf8'));
-export const RUNS_DIR = join(ROOT, 'data', 'ml', 'runs');
+// ZP_DATA_DIR: otra carpeta de datos (la misma variable que lee ml/zpml.py; la heredan los procesos hijos).
+export const RUNS_DIR = join(process.env.ZP_DATA_DIR ? resolve(process.env.ZP_DATA_DIR) : join(ROOT, 'data'), 'ml', 'runs');
 
 export function pythonPath() {
   if (process.env.ZP_PYTHON) return process.env.ZP_PYTHON;

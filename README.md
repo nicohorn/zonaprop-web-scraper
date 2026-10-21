@@ -9,7 +9,10 @@ interfaz web local y una sección de modelos de datos.
 - **Interfaz** en <http://localhost:3210>: parámetros, avance, registro y descarga de CSV.
 - **Modelos** en <http://localhost:3210/modelos>: seis análisis en Python (precio, oportunidades,
   rentabilidad, segmentos, texto, supervivencia) con parámetros, barra de avance y resultados.
-- **Notebook** `notebooks/01_price_prediction.ipynb` con el modelo de precio paso a paso.
+- **Calidad de datos** en <http://localhost:3210/calidad>: EDA de control de los datos que entrenan el
+  modelo de precio (limpieza, duplicados y fuga, faltantes, representatividad, deriva del scraper).
+- **Notebooks** `notebooks/00_calidad_datos.ipynb` (calidad de datos) y
+  `notebooks/01_price_prediction.ipynb` (modelo de precio paso a paso).
 
 ## Arquitectura
 
@@ -17,6 +20,7 @@ interfaz web local y una sección de modelos de datos.
 flowchart LR
   UI["ui/index.html<br/>Scraper"] -->|HTTP| S["src/server.js"]
   UM["ui/modelos.html<br/>Modelos"] -->|HTTP, polling| S
+  UQ["ui/calidad.html<br/>Calidad de datos"] -->|HTTP, polling| S
   CLI["npm run scrape<br/>src/scrape.js"] --> C
   S --> C["src/crawler.js"]
   C --> E["src/explore.js<br/>búsquedas + partición por precio"]
@@ -40,6 +44,7 @@ flowchart LR
 | `src/server.js` | Servidor local (sólo 127.0.0.1): interfaz, API del scraper, CSV y API de modelos. |
 | `src/ml.js` | Lanza `ml/run.py` como proceso hijo (uno a la vez), lee el avance, permite cancelar. |
 | `ml/run.py`, `ml/zpml.py` | Entrenamientos A–F; carga, filtro CABA y variables compartidas con el notebook. |
+| `ml/calidad.py` | Chequeos de calidad de datos (tarea `quality`, página /calidad y notebook 00). |
 | `config.js` | Configuración técnica (puerto, navegador, tiempos). |
 
 ## Requisitos e instalación
@@ -126,7 +131,29 @@ Defaults: venta, USD, departamentos, test 20 %. **El dólar MEP por defecto (145
 actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus rangos están en
 `ml/tasks.json`.
 
+## Calidad de datos
+
+En <http://localhost:3210/calidad> (o desde los botones del Scraper y de Modelos): **Generar reporte**
+corre seis chequeos sobre los datos guardados y muestra un resumen con estado (OK / Atención /
+Crítico) y una solapa por chequeo con hallazgos, gráficos y tablas en CSV:
+
+0. **Controles básicos del scraper**: completitud, formato, unicidad, rangos, consistencia y
+   concordancia con la URL sobre todos los avisos, independiente de cualquier modelo.
+1. **Embudo de limpieza**: qué quita cada regla del modelo A y si cambia el peso de algún barrio.
+2. **Duplicados y fuga**: la misma unidad publicada varias veces y cuánto test tendría su gemelo en
+   train según cómo se separa.
+3. **Faltantes**: si cada dato falta al azar o según el precio (MNAR), relativo al barrio.
+4. **Representatividad**: avisos por barrio e incertidumbre de la mediana de USD/m².
+5. **Robustez del scraper**: campos vacíos por franja horaria (cambios de HTML, Cloudflare), ritmo,
+   fallas, cobertura por búsqueda (`frontier.json`) y validez de formatos.
+
+Conviene correrlo después de cada scrape y antes de entrenar. Usa el mismo proceso de Python que
+Modelos (uno a la vez). Detalle y criterios de cada estado: `docs/calidad_datos.md`. Con la variable
+`ZP_DATA_DIR` la interfaz y los scripts leen otra carpeta de datos.
+
 ## Notebook
+
+`notebooks/00_calidad_datos.ipynb`: los mismos chequeos que /calidad, uno por celda (`ml/calidad.py`).
 
 `notebooks/01_price_prediction.ipynb` (guardado con salidas): limpieza con filas por paso,
 variables, test agrupado, CV, baselines, evaluación en test, comparación con el protocolo

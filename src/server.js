@@ -146,10 +146,14 @@ const routes = {
     try { spawn(cmd, [dir], { stdio: 'ignore', detached: true }).on('error', () => {}).unref(); } catch { /* nada */ }
     json(res, 200, { dir });
   },
-  // --- Modelos (ui/modelos.html, src/ml.js) ---
+  // --- Modelos y Calidad de datos (ui/modelos.html, ui/calidad.html, src/ml.js) ---
   'GET /modelos': (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(readFileSync(join(ROOT, 'ui', 'modelos.html')));
+  },
+  'GET /calidad': (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(readFileSync(join(ROOT, 'ui', 'calidad.html')));
   },
   'GET /api/ml/state': (req, res) => json(res, 200, { tasks: ML_TASKS, python: ml.pythonInfo(), ...ml.status(), runs: ml.listRuns() }),
   'GET /api/ml/run': (req, res) => {
