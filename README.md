@@ -11,7 +11,7 @@ interfaz web local y una sección de modelos de datos.
   Ver [Interfaz](#interfaz).
 - **Modelos**: seis análisis en Python (precio, oportunidades, rentabilidad, segmentos, texto,
   supervivencia) más la ablación A2, con parámetros, barra de avance y resultados.
-- **Calidad de datos** en <http://localhost:3210/calidad>: EDA de control de los datos scrapeados
+- **Calidad de datos** en **Datos › Calidad de datos** (<http://localhost:3210/calidad> abre ahí; la página original sigue en /clasico/calidad): EDA de control de los datos scrapeados
   (controles básicos, limpieza, duplicados y fuga, faltantes, representatividad, deriva del scraper).
 - **Notebooks** `notebooks/00_calidad_datos.ipynb` (calidad de datos) y
   `notebooks/01_price_prediction.ipynb` (modelo de precio paso a paso).
@@ -22,7 +22,7 @@ interfaz web local y una sección de modelos de datos.
 flowchart LR
   UI["ui/app.html + app.js<br/>scraper.js, app.css"] -->|HTTP, SSE, polling| S["src/server.js"]
   UC["ui/index.html, ui/modelos.html<br/>vista anterior (/clasico)"] -->|HTTP| S
-  UQ["ui/calidad.html<br/>Calidad de datos"] -->|HTTP, polling| S
+  UQ["ui/calidad.html<br/>Calidad de datos (vista anterior)"] -->|HTTP, polling| S
   CLI["npm run scrape<br/>src/scrape.js"] --> C
   S --> C["src/crawler.js"]
   C --> E["src/explore.js<br/>búsquedas + partición por precio"]
@@ -46,7 +46,7 @@ flowchart LR
 | `src/server.js` | Servidor local (sólo 127.0.0.1): interfaz (`ui/app.html`, vista anterior en `/clasico`), API del scraper, CSV y API de modelos. |
 | `src/ml.js` | Lanza `ml/run.py` como proceso hijo (uno a la vez), lee el avance, permite cancelar. |
 | `ml/run.py`, `ml/zpml.py` | Entrenamientos A–F; carga, filtro CABA y variables compartidas con el notebook. |
-| `ml/calidad.py` | Chequeos de calidad de datos (tarea `quality`, página /calidad y notebook 00). |
+| `ml/calidad.py` | Chequeos de calidad de datos (tarea `quality`, Datos › Calidad de datos y notebook 00). |
 | `config.js` | Configuración técnica (puerto, navegador, tiempos). |
 
 ## Requisitos e instalación
@@ -161,7 +161,7 @@ actualizalo** antes de usar C o de convertir pesos en A. Los parámetros y sus r
 
 ## Calidad de datos
 
-En <http://localhost:3210/calidad> (o desde los botones del Scraper y de Modelos): **Generar reporte**
+En **Datos › Calidad de datos** (<http://localhost:3210/calidad> o `#datos&t=calidad`; cada chequeo tiene su enlace `&s=<id>`, p. ej. `&s=duplicados`) usa los mismos componentes que el resto de la app (tarjetas, estados, tablas, tooltips, tema claro/oscuro). La página original sigue en /clasico/calidad. **Generar reporte**
 corre seis chequeos sobre los datos guardados y muestra un resumen con estado (OK / Atención /
 Crítico) y una solapa por chequeo con hallazgos, gráficos y tablas en CSV:
 

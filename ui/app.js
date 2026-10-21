@@ -132,9 +132,10 @@ let route = { view: 'inicio', p: {} };
 
 // Las tareas con página propia ("page" en ml/tasks.json, p. ej. quality en /calidad) no son modelos.
 const tasks = () => (ml ? ORDER.filter((t) => ml.tasks[t]).concat(Object.keys(ml.tasks).filter((t) => !ORDER.includes(t) && !ml.tasks[t].page)) : []);
+const isPage = (t) => Boolean(ml?.tasks[t]?.page); // quality: vive en Datos › Calidad de datos
 const letterOf = (t) => LETTER[t] || t;
 const nameOf = (t) => { const l = ml?.tasks[t]?.label || t; return l.includes(' · ') ? l.split(' · ').slice(1).join(' · ') : l; };
-const ctxTask = () => (route.p.modelo ? TASK_OF[route.p.modelo] || (ml?.tasks[route.p.modelo] ? route.p.modelo : null) : null);
+const ctxTask = () => (route.p.modelo ? TASK_OF[route.p.modelo] || (ml?.tasks[route.p.modelo] && !isPage(route.p.modelo) ? route.p.modelo : null) : null);
 const getRun = async (id) => { if (!runCache.has(id)) runCache.set(id, api(`/api/ml/run?id=${encodeURIComponent(id)}`)); try { return await runCache.get(id); } catch (e) { runCache.delete(id); throw e; } };
 const runsOf = (task) => (cmp?.runs || []).filter((r) => r.task === task).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)));
 function latestOk(task) {
@@ -150,6 +151,7 @@ function parseHash() {
   const p = {}; let view = null;
   for (const x of parts) { const i = x.indexOf('='); if (i < 0) view = view || x; else p[x.slice(0, i)] = x.slice(i + 1); }
   if (p.corrida) view = 'corrida';
+  if (!view && location.pathname === '/calidad') { view = 'datos'; p.t = p.t || 'calidad'; }
   if (!view) view = p.modelo ? 'modelos' : (location.pathname === '/modelos' ? 'modelos' : 'inicio');
   return { view, p };
 }
@@ -195,13 +197,14 @@ function renderCtx(task) {
 $('#model-select').onchange = (e) => {
   const v = e.target.value;
   const view = route.view === 'corrida' ? 'modelos' : route.view;
-  go(view, { ...route.p, corrida: '', t: '', modelo: v });
+  go(view, { ...route.p, corrida: '', t: view === 'datos' ? route.p.t : '', modelo: v });
 };
 
 // --- Barra superior: entrenamiento / scraper -----------------------------------------------
 function renderTop() {
   const task = ctxTask(); const out = [];
-  if (ml?.running && ml.job && (!task || ml.job.task === task)) out.push(`<a class="pill running" href="${href('modelos', { modelo: letterOf(ml.job.task) })}"><span class="dot"></span>Entrenando ${esc(letterOf(ml.job.task))} · ${ml.job.pct} %</a>`);
+  if (ml?.running && ml.job && isPage(ml.job.task)) out.push(`<a class="pill running" href="${href('datos', { t: 'calidad' })}"><span class="dot"></span>Generando reporte de calidad · ${ml.job.pct} %</a>`);
+  else if (ml?.running && ml.job && (!task || ml.job.task === task)) out.push(`<a class="pill running" href="${href('modelos', { modelo: letterOf(ml.job.task) })}"><span class="dot"></span>Entrenando ${esc(letterOf(ml.job.task))} · ${ml.job.pct} %</a>`);
   if (scraper && scraper.state !== 'idle') out.push(`<a class="pill ${scraper.attention ? 'warn' : 'running'}" href="${href('datos')}"><span class="dot"></span>Scraper: ${esc(scraper.label)}</a>`);
   if (ml && !ml.python.ok) out.push('<span class="pill err" title="Instalá ml/requirements.txt (ver README)">Python no disponible</span>');
   $('#top-status').innerHTML = out.join('');
@@ -346,8 +349,11 @@ function homeData(task = ctxTask(), res) {
     <dt>Avisos guardados</dt><dd>${nf(s?.listings)}</dd>
     <dt>Búsquedas completas</dt><dd>${nf(s?.searchesDone)}</dd>
     <dt>Fichas visitadas</dt><dd>${nf(s?.details)}</dd>
-    <dt>Estado del scraper</dt><dd>${esc(s?.label || '–')}</dd></dl>
-    <div class="actions"><a class="btn small" href="${href('datos')}">Ver datos y limpieza →</a></div>`;
+    <dt>Estado del scraper</dt><dd>${esc(s?.label || '–')}</dd>
+    <dt>Calidad de los datos ${tip(QTIP)}</dt><dd id="home-q">–</dd></dl>
+    <div class="actions"><a class="btn small" href="${href('datos')}">Ver datos y limpieza →</a><a class="btn small" href="${href('datos', { t: 'calidad' })}">Ver calidad de datos →</a></div>`;
+  const q = latestOk(QTASK);
+  if (q) getRun(q.id).then(({ result: r }) => { const el = $('#home-q'); if (el && r) el.innerHTML = `${qPill(r.estado_general)} <span class="muted small">${nf(r.criticos)} críticos · ${nf(r.atencion)} en atención · ${fdate(q.started_at)}</span>`; }).catch(() => {});
 }
 
 // Nombre legible de cada corrida principal de A (las iteraciones de docs/historial_modelo_precio.md).
@@ -359,6 +365,12 @@ const iterTip = (r) => `Corrida ${r.id} · variante ${r.variante} · regla de du
 
 // --- 2 · Datos -------------------------------------------------------------------------------
 async function viewDatos(task) {
+  const tab = route.p.t === 'calidad' ? 'calidad' : 'scraper';
+  $('#datos-tabs').innerHTML = [['scraper', 'Scraper y limpieza'], ['calidad', 'Calidad de datos']].map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${k === tab}">${l}</button>`).join('');
+  $$('#datos-tabs button').forEach((b) => b.onclick = () => go('datos', { t: b.dataset.t === 'calidad' ? 'calidad' : '' }));
+  $('#datos-scraper').hidden = tab !== 'scraper';
+  $('#datos-calidad').hidden = tab !== 'calidad';
+  if (tab === 'calidad') return viewCalidad(task);
   const t = task || 'price';
   const lr = latestOk(t);
   const res = lr ? (await getRun(lr.id)).result : null;
@@ -368,6 +380,90 @@ async function viewDatos(task) {
   const max = lim.rows[0][1];
   $('#funnel').innerHTML = `<div class="bars">${lim.rows.map((r) => `<div class="barrow" tabindex="0" data-tip="${esc(`${r[0]}: quedan ${nf(r[1])}${r[2] ? `, se quitan ${nf(r[2])}` : ''}.`)}"><span class="lbl">${esc(r[0])}</span><span class="track"><span class="fill" style="display:block;width:${(r[1] / max) * 100}%"></span></span><span class="val">${nf(r[1])}</span></div>`).join('')}</div>
     <details class="sub"><summary>Ver la tabla de limpieza</summary>${tableHtml(lim)}</details>`;
+}
+
+// --- 2b · Datos › Calidad de datos (ml/calidad.py, tarea "quality") -------------------------
+const QTASK = 'quality';
+const QSTATE = { ok: ['ok', '✓ OK'], atencion: ['warn', '! Atención'], critico: ['err', '✕ Crítico'], sin_datos: ['', '– Sin datos'] };
+const QTIP = 'OK: no se encontró ningún problema. Atención: hay algo que conviene mirar; cada sección explica si el modelo A ya lo corrige. Crítico: el problema puede sesgar el modelo y hay que resolverlo antes de entrenar. Sin datos: no se pudo evaluar.';
+const qPill = (e) => { const [c, l] = QSTATE[e] || ['', e || '–']; return `<span class="pill ${c}">${esc(l)}</span>`; };
+const qDot = (e) => `<span class="qdot ${(QSTATE[e] || [''])[0]}" aria-hidden="true"></span>`;
+async function viewCalidad(task) {
+  const box = $('#datos-calidad'); const t = ml?.tasks[QTASK];
+  if (!t) { box.innerHTML = '<div class="card"><p class="muted">Esta versión no tiene la tarea de calidad de datos (ml/tasks.json).</p></div>'; return; }
+  const runs = runsOf(QTASK); const oks = runs.filter((r) => r.status === 'ok');
+  const id = runs.find((r) => r.id === route.p.r)?.id || oks[0]?.id || runs[0]?.id || null;
+  let vals = saved[QTASK]; if (!vals) try { vals = JSON.parse(localStorage.getItem('qualityParams') || '{}'); } catch { vals = {}; }
+  const scope = task && task !== 'price' ? `<div class="scoped-note"><b>Este reporte revisa los datos que entrenan el modelo A</b> (venta · departamento, con su regla de duplicados).<br>
+    Para ${esc(letterOf(task))} · ${esc(nameOf(task))} valen sobre todo «0 · Controles básicos del scraper» y «5 · Robustez del scraper», que miran todos los avisos.
+    <div class="actions"><a class="btn small" href="${href('datos', { ...route.p, modelo: 'A' })}">Ver con el modelo A</a></div></div>` : '';
+  box.innerHTML = `${scope}<div class="card">
+    <div class="q-head"><div><h2>${esc(t.question)}</h2><p class="lead">${esc(t.desc || '')} ${esc(t.use || '')}</p></div>
+      <div class="q-tools">${runs.length ? `<label class="small muted">Reporte <select id="q-runs">${runs.map((r) => `<option value="${esc(r.id)}" ${r.id === id ? 'selected' : ''}>${fdate(r.started_at)}${r.status === 'ok' ? '' : ` · ${esc(r.status)}`}</option>`).join('')}</select></label>` : ''}
+        <button class="btn primary" id="q-run">Generar reporte</button><button class="btn" id="q-cancel" disabled>Cancelar</button></div></div>
+    <div id="q-prog" hidden><div class="bar"><div id="q-bar"></div></div><div id="q-step" class="hint"></div></div>
+    <div id="q-msg"></div>
+    <details class="sub"><summary>Opciones avanzadas <span class="opt">${Object.keys(t.params).length} parámetros</span></summary>
+      <form id="q-form">${paramFields(t, vals)}</form>
+      <div class="actions"><button class="btn small" id="q-def" type="button">Volver a los valores por defecto</button></div>
+    </details></div>
+    <div class="stack" id="q-body">${id ? loading('Cargando el reporte…') : ''}</div>`;
+  $('#q-runs')?.addEventListener('change', (e) => go('datos', { ...route.p, r: e.target.value }));
+  $('#q-run').onclick = async () => {
+    const params = readParams(t, $('#q-form')); saved[QTASK] = params; localStorage.setItem('mlParams', JSON.stringify(saved));
+    $('#q-msg').innerHTML = '';
+    try { await api('/api/ml/start', { task: QTASK, params }); await refreshMl(); } catch (e) { $('#q-msg').innerHTML = `<div class="errbox">${esc(e.message)}</div>`; }
+  };
+  $('#q-cancel').onclick = () => api('/api/ml/cancel', {}).then(refreshMl);
+  $('#q-def').onclick = () => { delete saved[QTASK]; localStorage.setItem('mlParams', JSON.stringify(saved)); localStorage.removeItem('qualityParams'); $('#q-form').innerHTML = paramFields(t, {}); };
+  qualityStatus();
+  const body = $('#q-body');
+  if (!id) { body.innerHTML = '<div class="card"><div class="empty"><p><b>Todavía no hay reportes de calidad.</b></p><p class="muted">Tocá «Generar reporte»: lee data/listings.jsonl, frontier.json y failures.jsonl y tarda un par de minutos.</p></div></div>'; return; }
+  const meta = runs.find((r) => r.id === id);
+  const res = (await getRun(id)).result;
+  if (!res || res.status !== 'ok') { body.innerHTML = `<div class="errbox">El reporte del ${fdate(meta?.started_at)} no terminó bien: ${esc(res?.error || meta?.status || 'sin resultado (cancelado o en curso)')}</div>`; return; }
+  const secs = res.secciones || []; const cur = secs.find((x) => x.id === route.p.s) || null;
+  const fileUrl = (a) => `/api/ml/file?id=${encodeURIComponent(id)}&name=${encodeURIComponent(a)}`;
+  const tabs = [['', 'Resumen', res.estado_general], ...secs.map((x) => [x.id, x.titulo.split(':')[0], x.estado])];
+  let h = `<div class="seg" role="tablist" id="q-tabs" aria-label="Secciones del reporte">${tabs.map(([k, l, e]) => `<button role="tab" data-s="${esc(k)}" aria-selected="${(cur?.id || '') === k}" title="Estado: ${esc((QSTATE[e] || ['', e])[1].slice(2))}">${qDot(e)}${esc(l)}</button>`).join('')}</div>`;
+  if (!cur) {
+    const p = res.params || {}; const cnt = (e) => secs.filter((x) => x.estado === e).length;
+    h += `<div class="card"><div class="card-head"><h3>Resumen del reporte ${tip(QTIP)}</h3>${qPill(res.estado_general)}</div>
+      <p class="muted small">${fdate(meta?.started_at)} · ${esc(p.operacion || '')} · ${esc(p.tipo || '')} · duplicados ${esc(p.duplicados || '')}${p.excluir_pozo ? ' · sin pozo' : ''} · generado en ${fsec(res.seconds)}. El estado mide el problema en los datos; cada sección explica si el modelo A ya lo mitiga.</p>
+      <div class="kpi-row">${kpi(nf(secs.length), 'chequeos')}${kpi(nf(cnt('ok')), 'en OK', '', '')}${kpi(nf(cnt('atencion')), 'en atención', 'Conviene mirarlos; no frenan el entrenamiento si la sección dice que el modelo A ya lo corrige.', cnt('atencion') ? 'accent' : '')}${kpi(nf(cnt('critico')), 'críticos', 'Problemas que pueden sesgar el modelo: resolverlos antes de entrenar.')}</div></div>
+      <div class="model-grid">${secs.map((x) => { const [n, ...rest] = x.titulo.split(' · ');
+        return `<a class="mcard" href="${href('datos', { t: 'calidad', r: route.p.r || '', s: x.id })}">
+          <div class="mtop"><span class="letter">${esc(rest.length ? n : '·')}</span><h3>${esc(rest.length ? rest.join(' · ') : x.titulo)}</h3><span style="margin-left:auto">${qPill(x.estado)}</span></div>
+          <p class="q-find">${esc(x.hallazgos[0] || x.pregunta || '')}</p>
+          <div class="mnums two">${x.kpis.slice(0, 2).map((k) => `<div class="mnum"><b>${esc(k.valor)}</b><span>${esc(k.label)}</span></div>`).join('')}</div>
+          <div class="mfoot"><span>${nf(x.hallazgos.length)} hallazgos · ${nf(Object.keys(x.tablas || {}).length)} tablas · ${nf(x.imagenes.length)} gráficos</span><span class="go">Ver detalle →</span></div></a>`; }).join('')}</div>`;
+  } else {
+    const i = secs.indexOf(cur); const prev = secs[i - 1], next = secs[i + 1];
+    const sHref = (x) => href('datos', { t: 'calidad', r: route.p.r || '', s: x ? x.id : '' });
+    h += `<div class="card"><div class="crumbs"><a href="${sHref(null)}">Calidad de datos</a> › ${esc(cur.titulo.split(':')[0])}</div>
+      <div class="card-head"><h3 style="font-size:19px">${esc(cur.titulo)}</h3>${qPill(cur.estado)}</div>
+      <p class="lead" style="font-size:15px"><b>${esc(cur.pregunta)}</b></p>
+      <div class="kpi-row q-kpis">${cur.kpis.map((k) => `<div class="kpi"><b>${esc(k.valor)}</b><span>${esc(k.label)}</span>${k.nota ? `<span class="knote">${esc(k.nota)}</span>` : ''}</div>`).join('')}</div>
+      <h3>Hallazgos</h3><ul class="q-list">${cur.hallazgos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${cur.mitigacion ? `<div class="q-mitig" style="margin-top:var(--space-3)"><b>Qué implica para el modelo A.</b> ${esc(cur.mitigacion)}</div>` : ''}</div>`;
+    if (cur.imagenes.length) h += `<details class="block" open><summary>Gráficos <span class="count">${cur.imagenes.length}</span></summary><div class="gallery">${cur.imagenes.map((a) => `<figure><a href="${fileUrl(a)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a)}" alt="${esc(a)}"></a><figcaption>${esc(a)}</figcaption></figure>`).join('')}</div></details>`;
+    h += Object.entries(cur.tablas || {}).map(([name, tb], j) => `<details class="block" ${j === 0 ? 'open' : ''}><summary>${esc(name)} <span class="count">${tb.n > tb.rows.length ? `${nf(tb.rows.length)} de ${nf(tb.n)} filas` : `${nf(tb.rows.length)} filas`}</span></summary>
+      ${tableHtml(tb)}${tb.csv ? `<div class="actions"><a class="btn small" href="${fileUrl(tb.csv)}" download>Descargar CSV</a></div>` : ''}</details>`).join('');
+    h += `<div class="actions">${prev ? `<a class="btn" href="${sHref(prev)}">← ${esc(prev.titulo.split(':')[0])}</a>` : ''}<a class="btn" href="${sHref(null)}">Resumen</a>${next ? `<a class="btn primary" href="${sHref(next)}">${esc(next.titulo.split(':')[0])} →</a>` : ''}</div>`;
+  }
+  body.innerHTML = h;
+  $$('#q-tabs button').forEach((b) => b.onclick = () => go('datos', { t: 'calidad', r: route.p.r || '', s: b.dataset.s }));
+}
+function qualityStatus() {
+  if (!$('#q-run') || !ml) return;
+  const j = ml.job; const mine = j && j.task === QTASK;
+  $('#q-run').disabled = ml.running || !ml.python.ok;
+  $('#q-cancel').disabled = !mine;
+  $('#q-prog').hidden = !mine;
+  if (mine) { $('#q-bar').style.width = `${j.pct}%`; $('#q-step').textContent = `${j.pct} % · ${j.step}`; }
+  else if (ml.running) $('#q-msg').innerHTML = '<p class="hint">Hay un entrenamiento en curso; el reporte se puede generar cuando termine.</p>';
+  else if (!ml.python.ok) $('#q-msg').innerHTML = '<div class="errbox">Python no disponible: instalá ml/requirements.txt (ver README).</div>';
+  else if ($('#q-msg').querySelector('.hint')) $('#q-msg').innerHTML = '';
 }
 
 // --- 3 · Predecir -------------------------------------------------------------------------
@@ -529,8 +625,8 @@ function paramFields(t, vals) {
     return `<label class="field">${esc(s.label)}${def}</label><input type="number" name="${k}" value="${v}" min="${s.min ?? ''}" max="${s.max ?? ''}" step="${s.step ?? 'any'}">`;
   }).join('');
 }
-function readParams(t) {
-  const out = {}, form = $('#m-form');
+function readParams(t, form = $('#m-form')) {
+  const out = {};
   for (const [k, s] of Object.entries(t.params)) {
     const els = $$(`[name="${k}"]`, form);
     if (s.type === 'bool') out[k] = els[0].checked;
@@ -559,6 +655,7 @@ async function viewCorrida() {
   const el = $('#view-corrida'); const id = route.p.corrida;
   const meta = (cmp?.runs || []).find((r) => r.id === id) || (ml?.runs || []).find((r) => r.id === id);
   const task = meta?.task || id.split('-').slice(2).join('-');
+  if (isPage(task)) { history.replaceState(null, '', href('datos', { t: 'calidad', r: id, modelo: '' })); render(); return; }
   if (ml?.tasks[task] && route.p.modelo !== letterOf(task)) { history.replaceState(null, '', href('', { corrida: id, modelo: letterOf(task) })); route.p.modelo = letterOf(task); renderCtx(task); document.body.classList.add('has-model'); for (const a of $$('#nav a')) a.href = href(a.dataset.nav, {}); }
   el.innerHTML = `<div class="crumbs"><a href="${href('experimentos')}">Experimentos</a> › <a href="${href('modelos')}">${esc(letterOf(task))} · ${esc(nameOf(task))}</a> › ${esc(id)}</div><div class="card" id="run-body"></div>`;
   await renderRun(id, $('#run-body'));
@@ -579,12 +676,12 @@ async function viewExperimentos(task) {
   if (cur === 'glosario') expGlosario(body, task);
 }
 function expCorridas(body, task) {
-  const all = [...(cmp?.runs || [])];
-  for (const r of ml.runs) if (!all.find((x) => x.id === r.id)) all.push({ ...r, started_at: null });
+  const all = (cmp?.runs || []).filter((r) => !isPage(r.task));
+  for (const r of ml.runs) if (!isPage(r.task) && !all.find((x) => x.id === r.id)) all.push({ ...r, started_at: null });
   const draw = () => {
     const ft = task || $('#f-task')?.value || '', fs = $('#f-status')?.value || '';
     const rows = all.filter((r) => (!ft || r.task === ft) && (!fs || (fs === 'ok' ? r.status === 'ok' : r.status !== 'ok'))).sort((a, b) => String(b.started_at || b.id).localeCompare(String(a.started_at || a.id)));
-    $('#runs-table').innerHTML = rows.length ? `<div class="tablewrap"><table><thead><tr><th>Fecha</th>${task ? '' : '<th>Modelo</th>'}<th>Resultado principal</th><th>Estado</th><th class="n">Duración</th><th>Corrida</th></tr></thead><tbody>${rows.map((r) => `<tr class="click" data-id="${esc(r.id)}"><td>${fdate(r.started_at)}</td>${task ? '' : `<td><span class="letter" style="min-width:30px;height:26px;font-size:12px">${esc(letterOf(r.task))}</span> ${esc(nameOf(r.task))}</td>`}<td>${mainMetric(r)}</td><td>${r.status === 'ok' ? '<span class="pill ok">ok</span>' : `<span class="pill err">${esc(r.status)}</span>`}</td><td class="n">${fsec(r.seconds)}</td><td class="muted small">${esc(r.id)}</td></tr>`).join('')}</tbody></table></div><p class="hint">${rows.length} corridas. Tocá una fila para ver su resultado completo.</p>` : '<p class="muted">No hay corridas con ese filtro.</p>';
+    $('#runs-table').innerHTML = rows.length ? `<div class="tablewrap"><table><thead><tr><th>Fecha</th>${task ? '' : '<th>Modelo</th>'}<th>Resultado principal</th><th>Estado</th><th class="n">Duración</th><th>Corrida</th></tr></thead><tbody>${rows.map((r) => `<tr class="click" data-id="${esc(r.id)}"><td>${fdate(r.started_at)}</td>${task ? '' : `<td><span class="letter" style="min-width:30px;height:26px;font-size:12px">${esc(letterOf(r.task))}</span> ${esc(nameOf(r.task))}</td>`}<td>${mainMetric(r)}</td><td>${r.status === 'ok' ? '<span class="pill ok">ok</span>' : `<span class="pill err">${esc(r.status)}</span>`}</td><td class="n">${fsec(r.seconds)}</td><td class="muted small">${esc(r.id)}</td></tr>`).join('')}</tbody></table></div><p class="hint">${rows.length} corridas. Tocá una fila para ver su resultado completo.${task ? '' : ` Los reportes de calidad de datos están en <a href="${href('datos', { t: 'calidad' })}">Datos › Calidad de datos</a>.`}</p>` : '<p class="muted">No hay corridas con ese filtro.</p>';
     $$('#runs-table tr[data-id]').forEach((tr) => tr.onclick = () => go('', { corrida: tr.dataset.id }));
   };
   body.innerHTML = `<div class="card">${task ? '' : `<div class="table-tools"><label>Modelo <select id="f-task"><option value="">Todos</option>${tasks().map((t) => `<option value="${t}">${esc(letterOf(t))} · ${esc(nameOf(t))}</option>`).join('')}</select></label>`}
@@ -632,14 +729,14 @@ function expGlosario(body, task) {
 // --- 6 · Historial y docs -----------------------------------------------------------------
 async function viewDocs(task) {
   const isA = !task || task === 'price' || task === 'price_ablation';
-  const allowed = isA ? (task ? ['historial', 'doc'] : ['historial', 'doc', 'anterior']) : ['notas'];
-  const names = { historial: 'Historial del modelo A', doc: 'Documentación del modelo A', anterior: 'Vista anterior', notas: `Notas e historial de ${task ? letterOf(task) : ''}` };
+  const allowed = isA ? (task ? ['historial', 'doc', 'calidad'] : ['historial', 'doc', 'calidad', 'anterior']) : ['notas'];
+  const names = { historial: 'Historial del modelo A', doc: 'Documentación del modelo A', calidad: 'Calidad de datos', anterior: 'Vista anterior', notas: `Notas e historial de ${task ? letterOf(task) : ''}` };
   const cur = allowed.includes(route.p.t) ? route.p.t : allowed[0];
   $('#doc-tabs').innerHTML = allowed.map((k) => `<button role="tab" data-t="${k}" aria-selected="${k === cur}">${esc(names[k])}</button>`).join('');
   $$('#doc-tabs button').forEach((b) => b.onclick = () => go('docs', { t: b.dataset.t }));
   const body = $('#doc-body'); body.innerHTML = loading();
   if (cur === 'anterior') {
-    body.innerHTML = `<div class="card"><h3>Pantallas anteriores</h3><p class="muted">Las dos pantallas originales siguen funcionando tal cual, con todos sus controles.</p><div class="actions"><a class="btn" href="/clasico">Scraper (vista anterior)</a><a class="btn" href="/clasico/modelos">Modelos (vista anterior)</a></div></div>`;
+    body.innerHTML = `<div class="card"><h3>Pantallas anteriores</h3><p class="muted">Las pantallas originales siguen funcionando tal cual, con todos sus controles.</p><div class="actions"><a class="btn" href="/clasico">Scraper (vista anterior)</a><a class="btn" href="/clasico/modelos">Modelos (vista anterior)</a><a class="btn" href="/clasico/calidad">Calidad de datos (vista anterior)</a></div></div>`;
     return;
   }
   if (cur === 'notas') {
@@ -650,11 +747,11 @@ async function viewDocs(task) {
     $$('#doc-body tr[data-id]').forEach((tr) => tr.onclick = () => go('', { corrida: tr.dataset.id }));
     return;
   }
-  const d = await api(cur === 'historial' ? '/api/ml/historial' : '/api/ml/doc');
+  const d = await api(cur === 'historial' ? '/api/ml/historial' : cur === 'calidad' ? '/api/ml/doc-calidad' : '/api/ml/doc');
   if (!d.markdown) { body.innerHTML = `<div class="errbox">No se encontró ${esc(d.name)}</div>`; return; }
   const { html, toc } = md(d.markdown);
   body.innerHTML = `<div class="${toc.length > 1 ? 'doc-layout' : ''}">${toc.length > 1 ? `<nav class="toc card"><b>En este documento</b>${toc.map((x) => `<a href="javascript:void 0" data-id="${x.id}" style="padding-left:${(x.level - 2) * 12 + 8}px">${x.text}</a>`).join('')}</nav>` : ''}
-    <article class="card md"><p class="muted small">${esc(d.name)}${cur === 'historial' ? ' · orden cronológico; cada corrida sigue disponible en Experimentos' : ''}</p>${html}</article></div>`;
+    <article class="card md"><p class="muted small">${esc(d.name)}${cur === 'historial' ? ' · orden cronológico; cada corrida sigue disponible en Experimentos' : cur === 'calidad' ? ` · el reporte interactivo está en <a href="${href('datos', { t: 'calidad' })}">Datos › Calidad de datos</a>` : ''}</p>${html}</article></div>`;
   $$('#doc-body .toc a').forEach((a) => a.onclick = () => document.getElementById(a.dataset.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
 function md(src) {
@@ -690,10 +787,13 @@ async function refreshMl() {
   try { ml = await api('/api/ml/state'); } catch { $('#top-status').innerHTML = '<span class="pill err">Sin conexión con el servidor</span>'; return; }
   const task = ctxTask();
   if (route.view === 'modelos' && task) trainStatus(task);
+  if (route.view === 'datos' && route.p.t === 'calidad') qualityStatus();
   if (wasRunning && !ml.running) { // terminó un entrenamiento: refrescar datos y la vista
     runCache.clear(); cmp = await api('/api/ml/compare').catch(() => cmp); pmodels = null;
     if (ml.last?.task === 'price') await loadPriceModels().catch(() => {});
-    wasRunning = false; render(); return;
+    wasRunning = false;
+    if (isPage(ml.last?.task) && route.p.r) { go('datos', { ...route.p, r: '' }); return; } // mostrar el reporte nuevo
+    render(); return;
   }
   wasRunning = ml.running;
   renderTop();
