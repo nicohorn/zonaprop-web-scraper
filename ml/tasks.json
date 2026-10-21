@@ -70,7 +70,7 @@
           "v5_sin_direccion"
         ],
         "default": "v4_todo_sin_iso",
-        "label": "Variante de LightGBM (v1 = iteraci?n 1, 13,7 %; v3_ppm2_huber = iteraci?n 2, 10,8 %; ver ablaci?n)"
+        "label": "Variante de LightGBM (v1 = iteración 1, 13,7 %; v3_ppm2_huber = iteración 2, 10,8 %; ver ablación)"
       },
       "duplicados": {
         "type": "select",
@@ -184,12 +184,12 @@
           "optuna"
         ],
         "default": "grilla",
-        "label": "Hiperpar?metros (grilla por CV o mejores de ml/optuna_precio.py)"
+        "label": "Hiperparámetros (grilla por CV o mejores de ml/optuna_precio.py)"
       },
       "modelo_sin_direccion": {
         "type": "bool",
         "default": true,
-        "label": "Entrenar tambi?n el modelo de respaldo sin direcci?n (formulario)"
+        "label": "Entrenar también el modelo de respaldo sin dirección (formulario)"
       }
     },
     "question": "¿Cuánto debería valer este aviso?",

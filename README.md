@@ -6,11 +6,13 @@ interfaz web local y una sección de modelos de datos.
 - **Sólo CABA por defecto**: busca en `capital-federal` y descarta avisos de otras zonas.
 - **Scraper** Node.js + Puppeteer (Chrome real) que recorre listados y, opcionalmente, fichas.
   Retoma donde quedó y parte las búsquedas grandes por rango de precio.
-- **Interfaz** en <http://localhost:3210>: parámetros, avance, registro y descarga de CSV.
-- **Modelos** en <http://localhost:3210/modelos>: seis análisis en Python (precio, oportunidades,
-  rentabilidad, segmentos, texto, supervivencia) con parámetros, barra de avance y resultados.
-- **Calidad de datos** en <http://localhost:3210/calidad>: EDA de control de los datos que entrenan el
-  modelo de precio (limpieza, duplicados y fuga, faltantes, representatividad, deriva del scraper).
+- **Interfaz** en <http://localhost:3210>: una sola aplicación con seis secciones en orden
+  (Inicio → Datos → Predecir precio → Resultados por modelo → Experimentos → Historial y docs).
+  Ver [Interfaz](#interfaz).
+- **Modelos**: seis análisis en Python (precio, oportunidades, rentabilidad, segmentos, texto,
+  supervivencia) más la ablación A2, con parámetros, barra de avance y resultados.
+- **Calidad de datos** en <http://localhost:3210/calidad>: EDA de control de los datos scrapeados
+  (controles básicos, limpieza, duplicados y fuga, faltantes, representatividad, deriva del scraper).
 - **Notebooks** `notebooks/00_calidad_datos.ipynb` (calidad de datos) y
   `notebooks/01_price_prediction.ipynb` (modelo de precio paso a paso).
 
@@ -18,8 +20,8 @@ interfaz web local y una sección de modelos de datos.
 
 ```mermaid
 flowchart LR
-  UI["ui/index.html<br/>Scraper"] -->|HTTP| S["src/server.js"]
-  UM["ui/modelos.html<br/>Modelos"] -->|HTTP, polling| S
+  UI["ui/app.html + app.js<br/>scraper.js, app.css"] -->|HTTP, SSE, polling| S["src/server.js"]
+  UC["ui/index.html, ui/modelos.html<br/>vista anterior (/clasico)"] -->|HTTP| S
   UQ["ui/calidad.html<br/>Calidad de datos"] -->|HTTP, polling| S
   CLI["npm run scrape<br/>src/scrape.js"] --> C
   S --> C["src/crawler.js"]
@@ -41,7 +43,7 @@ flowchart LR
 | `src/crawler.js` | Orquesta fase 1 (listados) y fase 2 (fichas), pausas, reintentos y verificación de Cloudflare. |
 | `src/caba.js` | Barrios de CABA; filtro de URLs y de la `location` de cada aviso. |
 | `src/settings.js` | Parámetros saneados (`data/settings.json`); fuerza CABA si `soloCaba`. |
-| `src/server.js` | Servidor local (sólo 127.0.0.1): interfaz, API del scraper, CSV y API de modelos. |
+| `src/server.js` | Servidor local (sólo 127.0.0.1): interfaz (`ui/app.html`, vista anterior en `/clasico`), API del scraper, CSV y API de modelos. |
 | `src/ml.js` | Lanza `ml/run.py` como proceso hijo (uno a la vez), lee el avance, permite cancelar. |
 | `ml/run.py`, `ml/zpml.py` | Entrenamientos A–F; carga, filtro CABA y variables compartidas con el notebook. |
 | `ml/calidad.py` | Chequeos de calidad de datos (tarea `quality`, página /calidad y notebook 00). |
@@ -94,11 +96,37 @@ Activo por defecto (`soloCaba: true` en `src/settings.js`):
 Para volver a todo el país: `"soloCaba": false` en `data/settings.json` (la interfaz todavía no
 tiene ese interruptor; con `soloCaba` activo el campo de zonas se ignora).
 
+## Interfaz
+
+`ui/app.html` (sin frameworks; rutas por `#hash`). Primero resúmenes y, al tocar, el detalle:
+
+1. **Inicio** (`#inicio`): qué es el proyecto, números del dataset, evolución del error de A.
+2. **Datos** (`#datos`): estado del scraper, descargas CSV, embudo de limpieza; la configuración
+   de la búsqueda, las opciones avanzadas y el registro están plegados.
+3. **Predecir precio** (`#predecir`): formulario corto (barrio, m², ambientes, baños, dirección);
+   "Más características" y "Opciones avanzadas" (corrida guardada, tipo) plegadas. El resultado
+   muestra precio, USD/m², rango 80 % / 50 %, mediana del barrio y error típico en ese barrio.
+4. **Resultados por modelo** (`#modelos`): una tarjeta por modelo (A–F y A2) con su pregunta y
+   2–3 números clave; el detalle trae el último resultado, sus corridas y **Entrenar** (los
+   parámetros quedan en "Opciones avanzadas").
+5. **Experimentos** (`#experimentos`): todas las corridas (filtros por modelo y estado),
+   comparación de variantes de A, ablaciones A2 y qué cambia cada variante.
+6. **Historial y docs** (`#docs`): `docs/historial_modelo_precio.md` y `docs/modelo_precio.md`
+   con índice.
+
+**Modelo seleccionado**: el selector "Modelo" de la barra superior (o una tarjeta) agrega
+`&modelo=A` (A, A2, B…F) al hash. Una franja fija muestra el modelo y su pregunta, y todas las
+secciones pasan a mostrar sólo ese modelo (números, corridas, experimentos, docs; Predecir sólo
+con A). **✕ Ver todos los modelos** vuelve al resumen. Cada corrida se abre en `#corrida=<id>`.
+
+Las pantallas anteriores siguen enteras en `/clasico` (scraper) y `/clasico/modelos`.
+Capturas: `node scripts/ux-screenshots.js` (con el servidor andando) → `debug/ux/`.
+
 ## Modelos
 
-En <http://localhost:3210/modelos>: elegir modelo, ajustar parámetros (todos tienen default),
-**Entrenar**, seguir la barra de avance; **Cancelar** corta el proceso. Resultados (métricas,
-tablas, gráficos, CSV) a la derecha; cada corrida queda en `data/ml/runs/<fecha>-<tarea>/`.
+En **Resultados por modelo**: elegir modelo, **Entrenar** (todos los parámetros tienen default,
+en "Opciones avanzadas"), seguir la barra de avance; **Cancelar** corta el proceso. Cada corrida
+queda en `data/ml/runs/<fecha>-<tarea>/` y se ve en **Experimentos**.
 
 | | Pregunta | Cuándo usarlo | Datos mínimos |
 | --- | --- | --- | --- |
