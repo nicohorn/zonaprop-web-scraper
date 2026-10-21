@@ -196,14 +196,14 @@
           <div><label class="field" for="p-amb">Ambientes</label><input id="p-amb" type="number" name="ambientes" value="2" min="1" max="10"></div>
           <div><label class="field" for="p-banos">Baños</label><input id="p-banos" type="number" name="banos" value="1" min="1" max="6"></div>
         </div>
-        <label class="field" for="p-dir">Dirección <span class="opt">opcional, mejora la precisión</span></label>
+        <label class="field" for="p-dir">Dirección <span class="opt">opcional, mejora la precisión</span> <span class="tip" role="button" tabindex="0" aria-label="Más información" aria-expanded="false" data-tip="Calle y altura (por ejemplo, Av. Santa Fe 3400). Con dirección el modelo usa la ubicación dentro del barrio: error mediano de alrededor de 9,9 %. Sin dirección usa un modelo de respaldo: alrededor de 10,9 %.">?</span></label>
         <input id="p-dir" type="text" name="direccion" placeholder="p. ej. Av. Santa Fe 3400" autocomplete="off">
         <p class="hint" id="p-dir-hint">Con calle y altura el modelo usa la ubicación dentro del barrio.</p>
 
         <details class="sub" id="p-more">
           <summary>Más características <span class="opt">opcional</span></summary>
           <div class="row">
-            <div><label class="field">Dormitorios <span class="tip" title="Si no lo cambiás, se usa ambientes − 1.">?</span></label><input type="number" name="dormitorios" value="1" min="0" max="10"></div>
+            <div><label class="field">Dormitorios <span class="tip" role="button" tabindex="0" aria-label="Más información" aria-expanded="false" data-tip="Si no lo cambiás, se completa solo con ambientes − 1 (por ejemplo, 3 ambientes = 2 dormitorios).">?</span></label><input type="number" name="dormitorios" value="1" min="0" max="10"></div>
             <div><label class="field">Sup. cubierta (m²)</label><input type="number" name="superficie_cubierta" placeholder="—" min="1"></div>
           </div>
           <div class="row">
@@ -214,7 +214,7 @@
             <div><label class="field">Piso</label><input type="number" name="piso" placeholder="—" min="0" max="60"></div>
             <div><label class="field">Antigüedad (años)</label><input type="number" name="antiguedad" placeholder="—" min="0" max="150"></div>
           </div>
-          <label class="field">Palabras del aviso <span class="tip" title="Se buscan las mismas palabras clave que en los avisos reales (luminoso, a reciclar, vista abierta…).">?</span></label>
+          <label class="field">Palabras del aviso <span class="tip" role="button" tabindex="0" aria-label="Más información" aria-expanded="false" data-tip="Escribí cómo describirías el departamento en el aviso. El modelo busca las mismas palabras clave que en los avisos reales: luminoso, a reciclar, vista abierta, dependencia, etc. Algunas suben el precio y otras lo bajan.">?</span></label>
           <input type="text" name="descripcion" placeholder="luminoso, al frente, reciclado, dependencia, vista abierta…">
           <div class="checks">
             <label><input type="checkbox" name="a_estrenar"> A estrenar</label>

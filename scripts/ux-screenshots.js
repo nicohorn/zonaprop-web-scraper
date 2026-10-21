@@ -8,6 +8,7 @@ const OUT = 'debug/ux';
 mkdirSync(OUT, { recursive: true });
 const shots = [
   ['01-inicio', '#inicio'],
+  ['inicio-espaciado', '#inicio'],
   ['02-datos', '#datos'],
   ['03-predecir', '#predecir', async (p) => { await p.waitForSelector('#pform:not([hidden])', { timeout: 20000 }); await p.click('#pbtn'); await p.waitForSelector('.price-big', { timeout: 60000 }); }],
   ['04-modelos', '#modelos'],
