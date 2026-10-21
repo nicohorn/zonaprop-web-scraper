@@ -55,6 +55,47 @@ const LABELS = {
 };
 const lab = (k) => LABELS[k] || String(k).replace(/_/g, ' ');
 
+// Glosario de métricas: el texto de cada "?" (en lenguaje simple).
+const EM = 'Error mediano: la diferencia típica entre el precio predicho y el publicado, en %. La mitad de las predicciones se equivoca por menos que este valor y la otra mitad por más. Se usa la mediana (y no el promedio) para que unos pocos avisos atípicos no distorsionen el número.';
+const GLOSS = {
+  'MAPE_mediana_%': EM,
+  'dentro_10%_%': 'Porcentaje de avisos en los que la predicción quedó a menos de 10 % del precio publicado (para arriba o para abajo). Más alto es mejor.',
+  R2_log: 'R² sobre el logaritmo del precio: qué parte de las diferencias de precio entre avisos explica el modelo, contando igual a un depto. barato que a uno caro. 1 = perfecto; 0 = no mejor que dar siempre el mismo precio.',
+  R2: 'R² en dólares: qué parte de las diferencias de precio entre avisos explica el modelo (1 = perfecto; 0 = no mejor que dar siempre el mismo precio). Lo dominan los departamentos caros, por eso se mira también el R² (log).',
+  MAE: 'Error absoluto medio: cuántos dólares se equivoca el modelo en promedio, sin importar si de más o de menos. Los departamentos caros lo inflan mucho, por eso se mira junto con el error mediano.',
+  'sesgo_mediano_%': 'Sesgo mediano: si el modelo tiende a pasarse (positivo) o a quedarse corto (negativo) en ese grupo, en % del precio. Cerca de 0 es lo ideal.',
+  'cobertura 80 %': 'Cobertura del rango 80 %: porcentaje de avisos de test cuyo precio real cayó dentro del rango probable del 80 %. Bien calibrado da cerca de 80 %; menos significa rangos demasiado angostos y más, demasiado anchos.',
+  'cobertura_intervalos_test_%': 'Porcentaje de precios reales del test que cayeron dentro de los rangos del 80 % y del 50 %. Si los rangos están bien calibrados, dan cerca de 80 % y 50 %.',
+  'rentabilidad_bruta_%': 'Rendimiento bruto anual: 12 meses de alquiler divididos por el precio de compra (ambos en USD por m²). No descuenta expensas, impuestos, comisiones ni meses sin inquilino.',
+  'años_para_recuperar': 'Años de alquiler bruto necesarios para pagar el precio de compra (100 ÷ rendimiento bruto). Es un techo optimista: no descuenta gastos ni vacancia.',
+  venta_usd_m2: 'Mediana del precio de venta por m² (USD) de los departamentos del barrio.',
+  alquiler_usd_m2_mes: 'Mediana del alquiler mensual por m², pasado a USD con el dólar MEP.',
+  'MAPE_mediana_%_media': 'Error mediano promedio de los 5 folds de validación cruzada sobre train (el test no se usa). La mitad de las predicciones se equivoca por menos que este valor.',
+  'MAPE_mediana_%_std': 'Cuánto varía el error mediano entre los folds de la validación cruzada. Diferencias entre variantes más chicas que esto pueden ser puro azar.',
+  'dentro_10%_%_media': 'Porcentaje de predicciones a menos de 10 % del precio publicado, promedio de los folds de validación cruzada.',
+  R2_log_media: 'R² (log) promedio de los folds de validación cruzada.', MAE_media: 'Error absoluto medio en USD, promedio de los folds de validación cruzada.',
+  'MAPE_OOF_%': 'Error mediano de las predicciones fuera de muestra (cada aviso predicho por un modelo que no lo vio al entrenar).',
+  'residuo_%': 'Cuánto más barato (negativo) o más caro (positivo) está el aviso respecto del precio que el modelo esperaba para él.',
+  'ppm2_vs_barrio_%': 'USD/m² del aviso comparado con la mediana de su barrio: −40 % significa 40 % más barato por m² que el aviso típico del barrio.',
+  score_oportunidad: 'Puntaje que combina cuánto más barato está que lo esperado y que la mediana del barrio. Más alto = oportunidad más clara (revisar igual el aviso).',
+  score_anomalia: 'Qué tan raro es el aviso para el IsolationForest (combinación poco común de precio, m² y ambientes). Más alto = más raro.',
+  umbral_barrio: 'Avisos con USD/m² por debajo de esta fracción de la mediana del barrio se tratan como posibles errores de datos, no como oportunidades.',
+  fx_mep: 'Dólar MEP (bolsa) en pesos por dólar, usado para pasar alquileres en ARS a USD. Se toma de dolarapi.com el día de la corrida; si falla, 1.450.',
+  n_train: 'Avisos usados para entrenar el modelo.', n_test: 'Avisos que el modelo nunca vio, usados una sola vez para medir el error.',
+  split: 'Cómo se separaron train y test. "agrupado" = la misma propiedad (o su duplicado) nunca está en los dos; es la evaluación honesta.',
+  grupos_en_train_y_test: 'Propiedades que aparecen a la vez en train y en test. Debe ser 0 para que el error no salga optimista.',
+};
+const MODEL_GLOSS = [
+  [/^Mediana global/, 'Referencia mínima: predice siempre la mediana de precio de todos los avisos.'],
+  [/^Mediana USD\/m² del barrio/, 'Referencia simple: mediana del USD/m² del barrio multiplicada por la superficie. Es lo que haría una tasación rápida.'],
+  [/^Ridge/, 'Regresión lineal con regularización: un modelo simple para comparar.'],
+  [/^LightGBM v1/, 'La primera versión del modelo (iteración 1), entrenada en este mismo test para comparar de forma justa.'],
+  [/^LightGBM sin dirección/, 'Modelo de respaldo sin calle ni dirección: se usa en el formulario cuando no se carga dirección.'],
+  [/protocolo anterior/, 'El mismo modelo evaluado como al principio (split aleatorio, con duplicados). Sale optimista porque el test comparte propiedades con train.'],
+  [/^LightGBM \(test\)/, 'El modelo que se usa para predecir (gradient boosting), medido en el test.'],
+];
+const tip = (text) => (text ? `<span class="tip" role="button" tabindex="0" aria-label="Más información" aria-expanded="false" data-tip="${esc(text)}">?</span>` : '');
+
 // Variantes del modelo A, en palabras.
 const VARIANTS = {
   v1: 'Iteración 1. Variables básicas (barrio, m², ambientes, baños, cocheras…); predice log(precio). 13,7 % en su test.',
@@ -171,16 +212,17 @@ window.addEventListener('scraper-status', (e) => {
 });
 
 // --- Tablas --------------------------------------------------------------------------------
-function tableHtml(t, { hl, click, cap } = {}) {
+function tableHtml(t, { hl, click, cap, cellTip } = {}) {
   const numCol = t.columns.map((c, i) => t.rows.some((r) => typeof r[i] === 'number'));
   const rows = cap ? t.rows.slice(0, cap) : t.rows;
-  return `<div class="tablewrap"><table><thead><tr>${t.columns.map((c, i) => `<th class="${numCol[i] ? 'n' : ''}" title="${esc(c)}">${esc(lab(c))}</th>`).join('')}</tr></thead><tbody>${rows.map((r, ri) => `<tr class="${hl?.(r) ? 'hl' : ''} ${click ? 'click' : ''}" ${click ? `data-i="${ri}"` : ''}>${r.map((v, i) => {
+  return `<div class="tablewrap"><table><thead><tr>${t.columns.map((c, i) => `<th class="${numCol[i] ? 'n' : ''}" ${GLOSS[c] ? '' : `title="${esc(c)}"`}>${esc(lab(c))}${tip(GLOSS[c])}</th>`).join('')}</tr></thead><tbody>${rows.map((r, ri) => `<tr class="${hl?.(r) ? 'hl' : ''} ${click ? 'click' : ''}" ${click ? `data-i="${ri}"` : ''}>${r.map((v, i) => {
     if (typeof v === 'string' && /^https?:/.test(v)) return `<td><a href="${esc(v)}" target="_blank" rel="noopener">abrir ↗</a></td>`;
-    return `<td class="${typeof v === 'number' ? 'n' : typeof v === 'string' && v.length < 30 ? 'nw' : ''}">${fmt(v, t.columns[i])}</td>`;
+    return `<td class="${typeof v === 'number' ? 'n' : typeof v === 'string' && v.length < 30 ? 'nw' : ''}">${fmt(v, t.columns[i])}${typeof v === 'string' && cellTip ? tip(cellTip(v, i)) : ''}</td>`;
   }).join('')}</tr>`).join('')}</tbody></table></div>${cap && t.rows.length > cap ? `<p class="hint">Mostrando ${cap} de ${nf(t.rows.length)} filas (el CSV completo está en "Archivos").</p>` : ''}`;
 }
 const loading = (msg = 'Cargando…') => `<div class="loading"><div class="spinner"></div>${esc(msg)}</div>`;
-const kpi = (v, l, t = '', cls = '') => `<div class="kpi ${cls}" ${t ? `title="${esc(t)}"` : ''}><b>${v}</b><span>${esc(l)}${t ? ' <span class="tip">?</span>' : ''}</span></div>`;
+const kpi = (v, l, t = '', cls = '') => `<div class="kpi ${cls}"><b>${v}</b><span>${esc(l)}${t ? ' ' + tip(t) : ''}</span></div>`;
+const modelTip = (name, i) => (i === 0 ? MODEL_GLOSS.find(([re]) => re.test(name))?.[1] || '' : '');
 
 // --- Números clave por modelo ------------------------------------------------------------
 function keyNumbers(task, r) {
@@ -189,19 +231,19 @@ function keyNumbers(task, r) {
   const m = r.metricas || {};
   switch (task) {
     case 'price': { const g = mainLgbm(m) || {}; const cob = r['cobertura_intervalos_test_%'] || r.cobertura;
-      return [{ v: pct(g['MAPE_mediana_%']), l: 'error mediano en test', t: 'La mitad de las predicciones se equivoca menos que esto (avisos nunca vistos por el modelo).' },
-        { v: pct(g['dentro_10%_%'], 0), l: 'predicciones a ±10 % del precio real' },
-        { v: cob ? pct(cob['80%'], 0) : nf((r.n_train || 0) + (r.n_test || 0)), l: cob ? 'precios reales dentro del rango 80 %' : 'avisos usados', t: cob ? 'Si el rango está bien calibrado, debería ser cerca de 80 %.' : '' }]; }
+      return [{ v: pct(g['MAPE_mediana_%']), l: 'error mediano en test', t: EM + ' Medido en avisos que el modelo nunca vio (test agrupado).' },
+        { v: pct(g['dentro_10%_%'], 0), l: 'predicciones a ±10 % del precio real', t: GLOSS['dentro_10%_%'] },
+        { v: cob ? pct(cob['80%'], 0) : nf((r.n_train || 0) + (r.n_test || 0)), l: cob ? 'precios reales dentro del rango 80 %' : 'avisos usados', t: cob ? GLOSS['cobertura 80 %'] : '' }]; }
     case 'price_ablation': { const t = Object.entries(r.tablas || {}).find(([k]) => k.startsWith('Ablación'))?.[1]; const best = t?.rows.find((x) => x[0] === r.mejor_variante_cv) || t?.rows[0];
-      return [{ v: esc(r.mejor_variante_cv || '–'), l: 'mejor variante por CV' }, { v: best ? pct(best[1]) : '–', l: 'su error mediano en CV' }, { v: nf(t?.rows.length), l: 'variantes comparadas' }]; }
-    case 'anomaly': return [{ v: nf(r.anomalias_oportunidad), l: 'posibles oportunidades' }, { v: nf(r.posibles_errores_de_datos), l: 'posibles errores de datos', t: `USD/m² por debajo de ${nf(r.umbral_barrio, 2)} × la mediana del barrio, m² implausibles, etc.` }, { v: nf(r.n), l: 'avisos analizados' }];
+      return [{ v: esc(r.mejor_variante_cv || '–'), l: 'mejor variante por CV', t: 'La variante con menor error mediano en la validación cruzada de 5 folds sobre train (sin tocar el test).' }, { v: best ? pct(best[1]) : '–', l: 'su error mediano en CV', t: GLOSS['MAPE_mediana_%_media'] }, { v: nf(t?.rows.length), l: 'variantes comparadas' }]; }
+    case 'anomaly': return [{ v: nf(r.anomalias_oportunidad), l: 'posibles oportunidades', t: 'Avisos con datos limpios que están bastante más baratos que lo que el modelo esperaba para su barrio, m² y características. Conviene revisarlos uno por uno.' }, { v: nf(r.posibles_errores_de_datos), l: 'posibles errores de datos', t: `USD/m² por debajo de ${nf(r.umbral_barrio, 2)} × la mediana del barrio, m² implausibles o pesos cargados como dólares: casi seguro no son gangas sino errores del aviso.` }, { v: nf(r.n), l: 'avisos analizados' }];
     case 'yields': { const t = r.tablas?.['Rentabilidad por barrio']; const top = t?.rows[0]; const ci = t?.columns.indexOf('rentabilidad_bruta_%');
-      return [{ v: pct(m.CABA?.['mediana_%']), l: `rentabilidad bruta mediana (${nf(m.CABA?.barrios)} barrios)` }, { v: top ? esc(top[0]) : '–', l: top ? `mejor barrio · ${pct(top[ci])}` : 'mejor barrio' }, { v: `$ ${nf(r.fx_mep, 1)}`, l: 'dólar MEP usado', t: r.fx_mep_info?.fuente || '' }]; }
-    case 'segments': return [{ v: nf(r.segmentos), l: 'segmentos encontrados' }, { v: nf(r.n), l: 'avisos agrupados' }, { v: esc(r.params?.method || '–'), l: 'método' }];
+      return [{ v: pct(m.CABA?.['mediana_%']), l: `rentabilidad bruta mediana (${nf(m.CABA?.barrios)} barrios)`, t: GLOSS['rentabilidad_bruta_%'] + ' Es la mediana entre los barrios con suficientes avisos.' }, { v: top ? esc(top[0]) : '–', l: top ? `mejor barrio · ${pct(top[ci])}` : 'mejor barrio', t: 'El barrio con mayor rendimiento bruto. Si tiene pocos avisos de alquiler, tomalo con cautela.' }, { v: `$ ${nf(r.fx_mep, 1)}`, l: 'dólar MEP usado', t: GLOSS.fx_mep + (r.fx_mep_info?.fuente ? ` Fuente: ${r.fx_mep_info.fuente}.` : '') }]; }
+    case 'segments': return [{ v: nf(r.segmentos), l: 'segmentos encontrados', t: 'Grupos de avisos parecidos entre sí (precio por m², superficie, ambientes, expensas…), armados por el algoritmo sin una pregunta previa.' }, { v: nf(r.n), l: 'avisos agrupados' }, { v: esc(r.params?.method || '–'), l: 'método' }];
     case 'text': { const a = m['LightGBM sin texto (test)'], b = m['LightGBM + texto (test)']; const top = r.tablas?.['Términos que mueven el USD/m²']?.rows[0];
-      return [{ v: top ? `«${esc(top[0])}»` : '–', l: 'término que más sube el precio' }, { v: top ? `«${esc(top[2])}»` : '–', l: 'término que más lo baja' }, { v: a && b ? `${nf(a['MAPE_mediana_%'] - b['MAPE_mediana_%'], 2)} pp` : '–', l: 'mejora del error al sumar texto' }]; }
+      return [{ v: top ? `«${esc(top[0])}»` : '–', l: 'término que más sube el precio' }, { v: top ? `«${esc(top[2])}»` : '–', l: 'término que más lo baja' }, { v: a && b ? `${nf(a['MAPE_mediana_%'] - b['MAPE_mediana_%'], 2)} pp` : '–', l: 'mejora del error al sumar texto', t: 'Cuántos puntos porcentuales baja el error mediano cuando el modelo además lee el título y la descripción del aviso.' }]; }
     case 'survival': return r.estado === 'faltan_datos'
-      ? [{ v: 'Faltan datos', l: 'necesita re-scrapes con historial' }, { v: nf(r.bajas_observadas), l: 'bajas observadas' }, { v: nf(r.dias_de_historial), l: 'días de historial' }]
+      ? [{ v: 'Faltan datos', l: 'necesita re-scrapes con historial', t: 'Para medir cuánto tarda un aviso en darse de baja hay que volver a recorrer las búsquedas varias semanas con "Guardar historial de cambios" activado.' }, { v: nf(r.bajas_observadas), l: 'bajas observadas' }, { v: nf(r.dias_de_historial), l: 'días de historial' }]
       : [{ v: nf(r.bajas_observadas), l: 'bajas observadas' }, { v: nf(r.avisos), l: 'avisos' }, { v: nf(r.dias_de_historial), l: 'días de historial' }];
     default: return Object.entries(r).filter(([, v]) => typeof v === 'number').slice(0, 3).map(([k, v]) => ({ v: nf(v, 2), l: lab(k) }));
   }
@@ -231,10 +273,10 @@ async function renderRun(id, el, { compact = false } = {}) {
   const skip = new Set(['task', 'params', 'started_at', 'status', 'error', 'traceback', 'seconds', 'artifacts', 'metricas', 'tablas', 'nota']);
   const flat = Object.entries(r).filter(([k, v]) => !skip.has(k) && (typeof v !== 'object' || v === null || Array.isArray(v)));
   const objs = Object.entries(r).filter(([k, v]) => !skip.has(k) && v && typeof v === 'object' && !Array.isArray(v));
-  if (flat.length) h += `<dl class="dl">${flat.map(([k, v]) => `<dt title="${esc(k)}">${esc(lab(k))}</dt><dd>${Array.isArray(v) ? esc(v.join(', ')) : fmt(v, k)}</dd>`).join('')}</dl>`;
+  if (flat.length) h += `<dl class="dl">${flat.map(([k, v]) => `<dt ${GLOSS[k] ? '' : `title="${esc(k)}"`}>${esc(lab(k))}${GLOSS[k] ? ' ' + tip(GLOSS[k]) : ''}</dt>` + `<dd>${Array.isArray(v) ? esc(v.join(', ')) : fmt(v, k)}</dd>`).join('')}</dl>`;
   if (r.metricas) {
     const models = Object.keys(r.metricas), cols = [...new Set(models.flatMap((m) => Object.keys(r.metricas[m])))];
-    h += `<h3 style="margin-top:20px">Métricas</h3>` + tableHtml({ columns: ['modelo', ...cols], rows: models.map((m) => [m, ...cols.map((c) => r.metricas[m][c] ?? null)]) }, { hl: (row) => row[0] === 'LightGBM (test)' });
+    h += `<h3 style="margin-top:20px">Métricas</h3>` + tableHtml({ columns: ['modelo', ...cols], rows: models.map((m) => [m, ...cols.map((c) => r.metricas[m][c] ?? null)]) }, { hl: (row) => row[0] === 'LightGBM (test)', cellTip: modelTip });
     if (task.startsWith('price')) h += '<p class="hint">Error mediano = mitad de los avisos con error menor. "A ±10 %" = porcentaje de predicciones a menos de 10 % del precio real. Resaltado: el modelo que se usa para predecir.</p>';
   }
   const imgs = (r.artifacts || []).filter((a) => a.endsWith('.png'));
@@ -269,8 +311,8 @@ async function viewInicio(task) {
   } else {
     const g = mainLgbm(res?.metricas) || {};
     const y = latestOk('yields'); const yr = y ? (await getRun(y.id)).result : null;
-    $('#home-kpis').innerHTML = kpi(nf(scraper?.listings), 'avisos scrapeados en CABA') + kpi(nf((res?.n_train || 0) + (res?.n_test || 0)), 'deptos. en venta usados por el modelo', 'Después de limpiar duplicados, pozo, errores y monedas distintas de USD.')
-      + kpi(pct(g['MAPE_mediana_%']), 'error mediano del modelo de precio', 'En avisos que el modelo nunca vio (test agrupado).', 'accent') + kpi(yr ? `$ ${nf(yr.fx_mep, 1)}` : '–', 'dólar MEP del último modelo C');
+    $('#home-kpis').innerHTML = kpi(nf(scraper?.listings), 'avisos scrapeados en CABA') + kpi(nf((res?.n_train || 0) + (res?.n_test || 0)), 'deptos. en venta usados por el modelo', 'Departamentos en venta en USD que quedan después de limpiar duplicados, pozo / en construcción, errores de carga y valores imposibles. Ver el embudo en Datos.')
+      + kpi(pct(g['MAPE_mediana_%']), 'error mediano del modelo de precio', EM + ' Medido en avisos que el modelo nunca vio (test agrupado).', 'accent') + kpi(yr ? `$ ${nf(yr.fx_mep, 1)}` : '–', 'dólar MEP del último modelo C', GLOSS.fx_mep);
   }
   // Evolución
   $('#home-evol-title').textContent = A ? 'Evolución del error del modelo de precio (A)' : `Corridas de ${letterOf(task)} · ${nameOf(task)}`;
@@ -278,7 +320,7 @@ async function viewInicio(task) {
   if (A) {
     const pr = runsOf('price').filter((r) => r.status === 'ok' && r.split === 'agrupado' && mainLgbm(r.metricas)).reverse();
     const max = Math.max(...pr.map((r) => mainLgbm(r.metricas)['MAPE_mediana_%']), 1);
-    $('#home-evol').innerHTML = pr.length ? `<div class="bars">${pr.map((r) => { const v = mainLgbm(r.metricas)['MAPE_mediana_%']; return `<a class="barrow" href="${href('', { corrida: r.id })}" style="color:inherit;text-decoration:none" title="${esc(r.id)}"><span class="lbl">${fdate(r.started_at).slice(0, 10)} · ${esc(r.variante)}</span><span class="track"><span class="fill" style="display:block;width:${(v / max) * 100}%"></span></span><span class="val">${pct(v)}</span></a>`; }).join('')}</div><p class="hint">Las primeras corridas usaban otra regla de duplicados (otro test); la comparación justa está en <a href="${href('docs', { t: 'historial' })}">Historial</a>.</p>` : '<p class="muted">Todavía no hay corridas del modelo A.</p>';
+    $('#home-evol').innerHTML = pr.length ? `<div class="bars">${pr.map((r) => { const v = mainLgbm(r.metricas)['MAPE_mediana_%']; return `<a class="barrow" href="${href('', { corrida: r.id })}" style="color:inherit;text-decoration:none"><span class="lbl">${esc(iterName(r))} ${tip(iterTip(r))}</span><span class="track"><span class="fill" style="display:block;width:${(v / max) * 100}%"></span></span><span class="val">${pct(v)}</span></a>`; }).join('')}</div><p class="hint">Las primeras corridas usaban otra regla de duplicados (otro test); la comparación justa está en <a href="${href('docs', { t: 'historial' })}">Historial</a>.</p>` : '<p class="muted">Todavía no hay corridas del modelo A.</p>';
   } else {
     const rs = runsOf(task);
     $('#home-evol').innerHTML = rs.length ? `<div class="tablewrap"><table><tbody>${rs.map((r) => `<tr class="click" data-id="${esc(r.id)}"><td>${fdate(r.started_at)}</td><td>${mainMetric(r)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sin corridas.</p>';
@@ -307,6 +349,13 @@ function homeData(task = ctxTask(), res) {
     <div class="actions"><a class="btn small" href="${href('datos')}">Ver datos y limpieza →</a></div>`;
 }
 
+// Nombre legible de cada corrida principal de A (las iteraciones de docs/historial_modelo_precio.md).
+const ITER = { '20261016-122915-price': 1, '20261016-143053-price': 2, '20261016-171812-price': 3, '20261016-193214-price': 4 };
+const iterName = (r) => (ITER[r.id] ? `Iteración ${ITER[r.id]}` : `Corrida ${fdate(r.started_at).slice(0, 10)}`);
+const iterTip = (r) => `Corrida ${r.id} · variante ${r.variante} · regla de duplicados ${r.duplicados} · ${fdate(r.started_at)}.`
+  + (ITER[r.id] === 1 ? ' Usaba la regla de duplicados anterior, así que su test es otro: en el test actual, esa versión da 13,3 %.' : '')
+  + (ITER[r.id] === 4 ? ' Misma variante que la iteración 3 con hiperparámetros de Optuna y modelo de respaldo sin dirección.' : '');
+
 // --- 2 · Datos -------------------------------------------------------------------------------
 async function viewDatos(task) {
   const t = task || 'price';
@@ -316,7 +365,7 @@ async function viewDatos(task) {
   $('#funnel-hint').textContent = task ? `Pasos de limpieza de la última corrida de ${letterOf(t)} · ${nameOf(t)}.` : 'Cuántos avisos quedan después de cada filtro de limpieza del modelo de precio (última corrida de A).';
   if (!lim) { $('#funnel').innerHTML = `<p class="muted">${task ? 'Este modelo no publica pasos de limpieza: usa los avisos del dataset filtrados por sus parámetros' + (res?.params?.operacion ? ` (operación ${esc(res.params.operacion)}${res.params.tipo ? `, tipo ${esc(res.params.tipo)}` : ''})` : '') + '.' : 'Todavía no hay corridas del modelo A.'}</p>`; return; }
   const max = lim.rows[0][1];
-  $('#funnel').innerHTML = `<div class="bars">${lim.rows.map((r) => `<div class="barrow" title="${esc(r[0])}${r[2] ? ` · se quitan ${nf(r[2])}` : ''}"><span class="lbl">${esc(r[0])}</span><span class="track"><span class="fill" style="display:block;width:${(r[1] / max) * 100}%"></span></span><span class="val">${nf(r[1])}</span></div>`).join('')}</div>
+  $('#funnel').innerHTML = `<div class="bars">${lim.rows.map((r) => `<div class="barrow" tabindex="0" data-tip="${esc(`${r[0]}: quedan ${nf(r[1])}${r[2] ? `, se quitan ${nf(r[2])}` : ''}.`)}"><span class="lbl">${esc(r[0])}</span><span class="track"><span class="fill" style="display:block;width:${(r[1] / max) * 100}%"></span></span><span class="val">${nf(r[1])}</span></div>`).join('')}</div>
     <details class="sub"><summary>Ver la tabla de limpieza</summary>${tableHtml(lim)}</details>`;
 }
 
@@ -392,13 +441,13 @@ function predictionHtml(r, inputs) {
         <div class="range-mark" style="left:${pos(r.precio)}%"><span>estimado</span></div>
         ${r.baseline_barrio_precio && r.baseline_barrio_precio > a && r.baseline_barrio_precio < b ? `<div class="range-mark barrio" style="left:${pos(r.baseline_barrio_precio)}%" title="Mediana del barrio × m²"></div>` : ''}
       </div>
-      <div class="range-ends"><span>${usd(lo, cur)}</span><b>Rango probable (80 %)</b><span>${usd(hi, cur)}</span></div>
+      <div class="range-ends"><span>${usd(lo, cur)}</span><b>Rango probable (80 %) ${tip('Rango donde debería caer el precio publicado con un 80 % de probabilidad: en el test, 8 de cada 10 precios reales quedaron adentro de rangos así. La franja más oscura es el rango del 50 %.')}</b><span>${usd(hi, cur)}</span></div>
       <p class="hint">En avisos que el modelo no vio, el ${pct(r.cobertura_test?.['80%'], 0)} de los precios reales cayó dentro de un rango así. La franja más oscura es el rango del 50 %: ${usd(lo5, cur)} – ${usd(hi5, cur)}.</p>
     </div>
     <div class="compare">
-      ${bm2 ? kpi(`${usd(bm2, cur)}/m²`, `mediana de ${inputs.barrio}`, 'Mediana del USD/m² de los avisos de venta del barrio (en train).') : ''}
-      ${diff != null ? kpi(`<span class="${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${nf(diff, 0)} %</span>`, diff > 0 ? 'por encima de su barrio' : 'por debajo de su barrio') : ''}
-      ${be ? kpi(pct(be.mape), `error típico del modelo en ${inputs.barrio}`, `Error mediano en ${nf(be.n)} avisos de test del barrio.`) : kpi(pct(g['MAPE_mediana_%']), 'error típico del modelo')}
+      ${bm2 ? kpi(`${usd(bm2, cur)}/m²`, `mediana de ${inputs.barrio}`, 'Mediana del precio por m² de los departamentos en venta del barrio (avisos de entrenamiento). Sirve como tasación rápida para comparar.') : ''}
+      ${diff != null ? kpi(`<span class="${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${nf(diff, 0)} %</span>`, diff > 0 ? 'por encima de su barrio' : 'por debajo de su barrio', 'Diferencia entre el USD/m² estimado para este departamento y la mediana de su barrio. Las características (m², ambientes, ubicación, texto) explican por qué se aparta.') : ''}
+      ${be ? kpi(pct(be.mape), `error típico del modelo en ${inputs.barrio}`, `${EM} Calculado sólo con los ${nf(be.n)} avisos de test de este barrio.`) : kpi(pct(g['MAPE_mediana_%']), 'error típico del modelo', EM)}
     </div>
     <div class="notes">${(r.avisos || []).map((w) => `<div class="note">${esc(w)}</div>`).join('')}</div>
     <details class="sub"><summary>Detalles técnicos</summary>
@@ -421,7 +470,7 @@ async function viewModelos() {
     return `<a class="mcard" href="${href('modelos', { modelo: letterOf(t) })}">
       <div class="mtop"><span class="letter">${esc(letterOf(t))}</span><h3>${esc(nameOf(t))}</h3><span style="margin-left:auto">${status}</span></div>
       <p class="q">${esc(ml.tasks[t].question || '')}</p>
-      ${kn.length ? `<div class="mnums">${kn.map((k) => `<div class="mnum" ${k.t ? `title="${esc(k.t)}"` : ''}><b>${k.v}</b><span>${esc(k.l)}</span></div>`).join('')}</div>` : '<p class="muted small">Entrenalo para ver resultados.</p>'}
+      ${kn.length ? `<div class="mnums">${kn.map((k) => `<div class="mnum"><b>${k.v}</b><span>${esc(k.l)}${k.t ? ' ' + tip(k.t) : ''}</span></div>`).join('')}</div>` : '<p class="muted small">Entrenalo para ver resultados.</p>'}
       <div class="mfoot"><span>${lr ? `Última: ${fdate(lr.started_at)} · ${n} corridas` : 'Todavía no se entrenó'}</span><span class="go">Ver detalle →</span></div></a>`;
   }));
   grid.innerHTML = cards.join('');
@@ -657,3 +706,54 @@ async function refreshMl() {
   await render();
   (async function loop() { await new Promise((r) => setTimeout(r, ml?.running ? 1000 : 4000)); await refreshMl(); loop(); })();
 })();
+
+// --- Tooltips ("?"): hover, clic/tap y teclado; un único globo position:fixed en <body> -----------
+// Delegación sobre document: funciona con todo lo que se re-renderiza. Clic fuera o Esc lo cierran.
+const tipBox = Object.assign(document.createElement('div'), { id: 'tooltip', className: 'tooltip', hidden: true });
+tipBox.setAttribute('role', 'tooltip');
+document.body.append(tipBox);
+let tipAt = null, tipPinned = false;
+function placeTip() {
+  if (!tipAt) return;
+  if (!tipAt.isConnected) { hideTip(); return; }
+  const r = tipAt.getBoundingClientRect();
+  tipBox.style.left = '0px'; tipBox.style.top = '0px';
+  const w = tipBox.offsetWidth, h = tipBox.offsetHeight;
+  const x = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8));
+  let y = r.top - h - 10, pos = 'above';
+  if (y < 8) { y = r.bottom + 10; pos = 'below'; }
+  tipBox.style.left = `${x}px`; tipBox.style.top = `${y}px`; tipBox.dataset.pos = pos;
+  tipBox.style.setProperty('--arrow-x', `${Math.max(12, Math.min(w - 12, r.left + r.width / 2 - x))}px`);
+}
+function showTip(el, pinned) {
+  if (tipAt && tipAt !== el) hideTip();
+  tipAt = el; tipPinned = pinned;
+  tipBox.textContent = el.dataset.tip;
+  tipBox.hidden = false;
+  el.setAttribute('aria-describedby', 'tooltip'); el.setAttribute('aria-expanded', String(pinned)); el.classList.add('on');
+  placeTip();
+}
+function hideTip() {
+  if (tipAt) { tipAt.removeAttribute('aria-describedby'); tipAt.setAttribute('aria-expanded', 'false'); tipAt.classList.remove('on'); }
+  tipAt = null; tipPinned = false; tipBox.hidden = true;
+}
+const tipOf = (e) => (e.target instanceof Element ? e.target.closest('[data-tip]') : null);
+document.addEventListener('mouseover', (e) => { const el = tipOf(e); if (el && !tipPinned && el !== tipAt) showTip(el, false); });
+document.addEventListener('mouseout', (e) => { const el = tipOf(e); if (el && el === tipAt && !tipPinned && !el.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener('focusin', (e) => { const el = tipOf(e); if (el && el !== tipAt) showTip(el, false); });
+document.addEventListener('focusout', (e) => { if (tipAt && e.target === tipAt && !tipPinned) hideTip(); });
+// En captura: el "?" no dispara el clic de la tarjeta, fila o label que lo contiene.
+document.addEventListener('click', (e) => {
+  const el = tipOf(e);
+  if (el) { e.preventDefault(); e.stopPropagation(); if (el === tipAt && tipPinned) hideTip(); else showTip(el, true); return; }
+  if (tipAt && !tipBox.contains(e.target)) hideTip();
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && tipAt) { const el = tipAt; hideTip(); el.focus?.(); return; }
+  const el = tipOf(e);
+  if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); if (el === tipAt && tipPinned) hideTip(); else showTip(el, true); }
+});
+addEventListener('scroll', placeTip, true);
+addEventListener('resize', placeTip);
+addEventListener('hashchange', hideTip);
+setInterval(() => { if (tipAt && !tipAt.isConnected) hideTip(); }, 500);
