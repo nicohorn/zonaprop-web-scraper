@@ -1,0 +1,19 @@
+{
+ "operaciones": [
+  "venta",
+  "alquiler",
+  "alquiler-temporal"
+ ],
+ "tipos": [],
+ "zonas": [],
+ "urls": [],
+ "maxPagesPerSearch": 300,
+ "includeDevelopments": true,
+ "trackChanges": false,
+ "scrapeDetails": true,
+ "maxDetailsPerRun": null,
+ "delayMin": 2,
+ "delayMax": 4.5,
+ "headless": false,
+ "blockResources": false
+}

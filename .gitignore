@@ -1,7 +1,11 @@
 node_modules/
 .perfil-chrome/
 .runtime/
-data/
+data/*
+# Se suben sólo el dataset comprimido y la configuración (ver README, "Datos").
+!data/listings.jsonl.gz
+!data/settings.json
+!data/frontier.json
 debug/
 
 ml/.venv/

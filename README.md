@@ -135,11 +135,33 @@ anterior, calibración del intervalo, errores por barrio, tamaño y precio, y SH
 
 ## Datos
 
-Todo en `data/` (no se sube al repo, está en `.gitignore`):
+Todo en `data/`. Al repo se sube sólo el dataset comprimido y la configuración
+(`listings.jsonl.gz`, `settings.json`, `frontier.json`); el resto (`listings.jsonl`, `ml/`,
+`archive/`, `log.txt`) está en `.gitignore`.
+
+**Dataset incluido** (`data/listings.jsonl.gz`, ~64 MB comprimido, ~290 MB sin comprimir):
+105.413 avisos de CABA (83.496 venta, 19.061 alquiler, 2.856 alquiler temporal), scrapeados del
+listado de ZonaProp el 15 de octubre de 2026 (15:00 a 22:52, hora de Buenos Aires; 15-16 oct en
+UTC). Sin fichas (`details.jsonl`). Va comprimido porque GitHub no acepta archivos de más de 100 MB.
+Los modelos (`ml/zpml.py`) leen el `.gz` directo si no existe `listings.jsonl`, así que un clon
+nuevo funciona sin hacer nada. Para usar el scraper o `npm run csv` (que escriben/leen
+`listings.jsonl`), descomprimilo primero:
+
+```
+# Windows (PowerShell, con el venv de ml/)
+ml\.venv\Scripts\python -c "import gzip,shutil; shutil.copyfileobj(gzip.open('data/listings.jsonl.gz'), open('data/listings.jsonl','wb'))"
+# Linux / macOS / Git Bash
+gunzip -k data/listings.jsonl.gz
+```
+
+Si existen los dos, se usa `listings.jsonl`. Para actualizar el `.gz` después de scrapear de nuevo:
+`gzip -kf -9 data/listings.jsonl`.
+
+| Archivo | Contenido |
 
 | Archivo | Contenido |
 | --- | --- |
-| `listings.jsonl` | un aviso por línea, tomado del listado |
+| `listings.jsonl` | un aviso por línea, tomado del listado (en el repo: `listings.jsonl.gz`) |
 | `details.jsonl` | una ficha por línea (fase 2) |
 | `failures.jsonl` | búsquedas inválidas, páginas que no cargaron, avisos dados de baja |
 | `frontier.json` | avance de la exploración |

@@ -1,0 +1,282 @@
+{
+ "nodes": {
+  "inmuebles-venta-capital-federal": {
+   "total": 109385,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-1-31622-dolar": {
+   "total": 4326,
+   "page": 145,
+   "s": "done",
+   "at": "2026-10-15T18:13:53.358Z"
+  },
+  "inmuebles-venta-capital-federal-31623-999999999-dolar": {
+   "total": 104450,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-31623-5623433-dolar": {
+   "total": 104160,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-31623-421698-dolar": {
+   "total": 86399,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-31623-115478-dolar": {
+   "total": 29953,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-31623-60429-dolar": {
+   "total": 4751,
+   "page": 159,
+   "s": "done",
+   "at": "2026-10-15T18:28:52.151Z"
+  },
+  "inmuebles-venta-capital-federal-60430-115478-dolar": {
+   "total": 25225,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-60430-83536-dolar": {
+   "total": 9818,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-60430-71049-dolar": {
+   "total": 3915,
+   "page": 131,
+   "s": "done",
+   "at": "2026-10-15T18:41:19.348Z"
+  },
+  "inmuebles-venta-capital-federal-71050-83536-dolar": {
+   "total": 5969,
+   "page": 199,
+   "s": "done",
+   "at": "2026-10-15T19:00:00.575Z"
+  },
+  "inmuebles-venta-capital-federal-83537-115478-dolar": {
+   "total": 15575,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-83537-98217-dolar": {
+   "total": 7683,
+   "page": 257,
+   "s": "done",
+   "at": "2026-10-15T19:25:16.064Z"
+  },
+  "inmuebles-venta-capital-federal-98218-115478-dolar": {
+   "total": 8096,
+   "page": 270,
+   "s": "done",
+   "at": "2026-10-15T19:54:24.086Z"
+  },
+  "inmuebles-venta-capital-federal-115479-421698-dolar": {
+   "total": 57130,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-115479-220674-dolar": {
+   "total": 35154,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-115479-159634-dolar": {
+   "total": 18812,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-115479-135773-dolar": {
+   "total": 10034,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-115479-125215-dolar": {
+   "total": 5348,
+   "page": 179,
+   "s": "done",
+   "at": "2026-10-15T20:17:21.607Z"
+  },
+  "inmuebles-venta-capital-federal-125216-135773-dolar": {
+   "total": 4890,
+   "page": 163,
+   "s": "done",
+   "at": "2026-10-15T20:32:58.445Z"
+  },
+  "inmuebles-venta-capital-federal-135774-159634-dolar": {
+   "total": 9147,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-135774-147221-dolar": {
+   "total": 4473,
+   "page": 150,
+   "s": "done",
+   "at": "2026-10-15T20:47:37.991Z"
+  },
+  "inmuebles-venta-capital-federal-147222-159634-dolar": {
+   "total": 4888,
+   "page": 163,
+   "s": "done",
+   "at": "2026-10-15T21:03:53.698Z"
+  },
+  "inmuebles-venta-capital-federal-159635-220674-dolar": {
+   "total": 17002,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-159635-187689-dolar": {
+   "total": 9156,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-159635-173094-dolar": {
+   "total": 4824,
+   "page": 161,
+   "s": "done",
+   "at": "2026-10-15T21:19:45.425Z"
+  },
+  "inmuebles-venta-capital-federal-173095-187689-dolar": {
+   "total": 4562,
+   "page": 153,
+   "s": "done",
+   "at": "2026-10-15T21:34:48.719Z"
+  },
+  "inmuebles-venta-capital-federal-187690-220674-dolar": {
+   "total": 8235,
+   "page": 275,
+   "s": "done",
+   "at": "2026-10-15T22:01:54.315Z"
+  },
+  "inmuebles-venta-capital-federal-220675-421698-dolar": {
+   "total": 22800,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-220675-305054-dolar": {
+   "total": 13671,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-220675-259456-dolar": {
+   "total": 7054,
+   "page": 236,
+   "s": "done",
+   "at": "2026-10-15T22:25:26.057Z"
+  },
+  "inmuebles-venta-capital-federal-259457-305054-dolar": {
+   "total": 6940,
+   "page": 232,
+   "s": "done",
+   "at": "2026-10-15T22:48:34.733Z"
+  },
+  "inmuebles-venta-capital-federal-305055-421698-dolar": {
+   "total": 9525,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-305055-358665-dolar": {
+   "total": 4857,
+   "page": 162,
+   "s": "done",
+   "at": "2026-10-15T23:04:36.443Z"
+  },
+  "inmuebles-venta-capital-federal-358666-421698-dolar": {
+   "total": 4839,
+   "page": 162,
+   "s": "done",
+   "at": "2026-10-15T23:20:43.568Z"
+  },
+  "inmuebles-venta-capital-federal-421699-5623433-dolar": {
+   "total": 18251,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-421699-1539933-dolar": {
+   "total": 15780,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-421699-805846-dolar": {
+   "total": 11089,
+   "s": "split"
+  },
+  "inmuebles-venta-capital-federal-421699-582944-dolar": {
+   "total": 6587,
+   "page": 220,
+   "s": "done",
+   "at": "2026-10-15T23:42:55.830Z"
+  },
+  "inmuebles-venta-capital-federal-582945-805846-dolar": {
+   "total": 4673,
+   "page": 156,
+   "s": "done",
+   "at": "2026-10-15T23:58:39.913Z"
+  },
+  "inmuebles-venta-capital-federal-805847-1539933-dolar": {
+   "total": 4876,
+   "page": 163,
+   "s": "done",
+   "at": "2026-10-16T00:14:22.097Z"
+  },
+  "inmuebles-venta-capital-federal-1539934-5623433-dolar": {
+   "total": 2535,
+   "page": 85,
+   "s": "done",
+   "at": "2026-10-16T00:22:38.445Z"
+  },
+  "inmuebles-venta-capital-federal-5623434-999999999-dolar": {
+   "total": 292,
+   "page": 10,
+   "s": "done",
+   "at": "2026-10-16T00:23:34.839Z"
+  },
+  "inmuebles-alquiler-capital-federal": {
+   "total": 31002,
+   "s": "split"
+  },
+  "inmuebles-alquiler-capital-federal-1-31622-pesos": {
+   "total": 221,
+   "page": 8,
+   "s": "done",
+   "at": "2026-10-16T00:24:21.885Z"
+  },
+  "inmuebles-alquiler-capital-federal-31623-999999999-pesos": {
+   "total": 30560,
+   "s": "split"
+  },
+  "inmuebles-alquiler-capital-federal-31623-5623433-pesos": {
+   "total": 25334,
+   "s": "split"
+  },
+  "inmuebles-alquiler-capital-federal-31623-421698-pesos": {
+   "total": 706,
+   "page": 24,
+   "s": "done",
+   "at": "2026-10-16T00:26:51.780Z"
+  },
+  "inmuebles-alquiler-capital-federal-421699-5623433-pesos": {
+   "total": 24629,
+   "s": "split"
+  },
+  "inmuebles-alquiler-capital-federal-421699-1539933-pesos": {
+   "total": 16636,
+   "s": "split"
+  },
+  "inmuebles-alquiler-capital-federal-421699-805846-pesos": {
+   "total": 8623,
+   "page": 288,
+   "s": "done",
+   "at": "2026-10-16T00:54:03.522Z"
+  },
+  "inmuebles-alquiler-capital-federal-805847-1539933-pesos": {
+   "total": 8014,
+   "page": 50,
+   "s": "done",
+   "at": "2026-10-16T00:59:20.244Z"
+  },
+  "inmuebles-alquiler-capital-federal-1539934-5623433-pesos": {
+   "total": 7987,
+   "page": 267,
+   "s": "done",
+   "at": "2026-10-16T01:24:17.016Z"
+  },
+  "inmuebles-alquiler-capital-federal-5623434-999999999-pesos": {
+   "total": 5230,
+   "page": 175,
+   "s": "done",
+   "at": "2026-10-16T01:40:30.715Z"
+  },
+  "inmuebles-alquiler-temporal-capital-federal": {
+   "total": 3973,
+   "page": 133,
+   "s": "done",
+   "at": "2026-10-16T01:52:47.703Z"
+  }
+ }
+}

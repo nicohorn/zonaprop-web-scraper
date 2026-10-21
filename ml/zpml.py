@@ -1,11 +1,12 @@
 """Carga y preparación de datos de ZonaProp para los modelos (CABA).
 
 Lo usan ml/run.py (la sección Modelos de la interfaz) y notebooks/01_price_prediction.ipynb.
-Lee data/listings.jsonl (última versión de cada id) y, si existe, data/details.jsonl.
+Lee data/listings.jsonl (o data/listings.jsonl.gz si no está; última versión de cada id) y, si existe, data/details.jsonl.
 ZP_DATA_DIR cambia la carpeta (lo usan los tests).
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
@@ -39,8 +40,14 @@ CABA = _caba_names()
 def read_jsonl(path: Path) -> list[dict]:
     rows = []
     if not path.exists():
-        return rows
-    with open(path, encoding="utf-8") as f:
+        # En un clon nuevo sólo está la versión comprimida (data/listings.jsonl.gz).
+        gz = path.with_name(path.name + ".gz")
+        if not gz.exists():
+            return rows
+        opener = lambda: gzip.open(gz, "rt", encoding="utf-8")
+    else:
+        opener = lambda: open(path, encoding="utf-8")
+    with opener() as f:
         for line in f:
             if line.strip():
                 try:
@@ -98,7 +105,7 @@ def tipo_from_row(url, title, tipo_propiedad=None) -> str:
 def load(include_details: bool = True, caba_only: bool = True, history: bool = False) -> pd.DataFrame:
     rows = read_jsonl(DATA / "listings.jsonl")
     if not rows:
-        raise SystemExit(f"No hay avisos en {DATA / 'listings.jsonl'}: corré el scraper primero.")
+        raise SystemExit(f"No hay avisos en {DATA / 'listings.jsonl'} (ni .gz): corré el scraper primero.")
     df = pd.DataFrame(rows)
     if not history:
         df = df.drop_duplicates("id", keep="last")
