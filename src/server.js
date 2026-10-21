@@ -2,7 +2,7 @@
 //   node src/server.js          levanta el servidor
 //   node src/server.js --open   además abre el navegador (lo que hace el .bat)
 //
-// Un solo proceso: sirve la página (ui/index.html), guarda los parámetros y maneja la corrida.
+// Un solo proceso: sirve la página (ui/app.html), guarda los parámetros y maneja la corrida.
 // Sólo escucha en 127.0.0.1.
 
 import http from 'node:http';
@@ -104,11 +104,23 @@ async function shutdown() {
   process.exit(0);
 }
 
+// Interfaz: ui/app.html es la aplicación (Inicio, Datos, Predecir, Modelos, Experimentos, Documentación)
+// con rutas por #hash; /modelos abre la misma app en "Modelos". Las pantallas anteriores siguen en /clasico.
+const page = (file) => (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(readFileSync(join(ROOT, 'ui', file)));
+};
+const ASSETS = { 'app.css': 'text/css; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8', 'scraper.js': 'text/javascript; charset=utf-8' };
+const asset = (file) => (req, res) => {
+  res.writeHead(200, { 'Content-Type': ASSETS[file], 'Cache-Control': 'no-store' });
+  res.end(readFileSync(join(ROOT, 'ui', file)));
+};
+
 const routes = {
-  'GET /': (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(readFileSync(join(ROOT, 'ui', 'index.html')));
-  },
+  'GET /': page('app.html'),
+  'GET /clasico': page('index.html'),
+  'GET /clasico/modelos': page('modelos.html'),
+  ...Object.fromEntries(Object.keys(ASSETS).map((f) => [`GET /ui/${f}`, asset(f)])),
   'GET /api/state': (req, res) => json(res, 200, {
     settings: loadSettings(),
     status: crawler.status(),
@@ -147,10 +159,7 @@ const routes = {
     json(res, 200, { dir });
   },
   // --- Modelos (ui/modelos.html, src/ml.js) ---
-  'GET /modelos': (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(readFileSync(join(ROOT, 'ui', 'modelos.html')));
-  },
+  'GET /modelos': page('app.html'),
   'GET /api/ml/state': (req, res) => json(res, 200, { tasks: ML_TASKS, python: ml.pythonInfo(), ...ml.status(), runs: ml.listRuns() }),
   'GET /api/ml/run': (req, res) => {
     const run = ml.getRun(new URL(req.url, URL_).searchParams.get('id') || '');

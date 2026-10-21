@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZonaProp CABA · Precios de departamentos</title>
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#inicio" title="Inicio"><span class="logo">ZP</span><span>ZonaProp <b>CABA</b></span></a>
+  <nav class="nav" id="nav" aria-label="Secciones">
+    <a href="#inicio" data-nav="inicio"><span class="step">1</span>Inicio</a>
+    <a href="#datos" data-nav="datos"><span class="step">2</span>Datos</a>
+    <a href="#predecir" data-nav="predecir"><span class="step">3</span>Predecir precio</a>
+    <a href="#modelos" data-nav="modelos"><span class="step">4</span>Resultados por modelo</a>
+    <a href="#experimentos" data-nav="experimentos"><span class="step">5</span>Experimentos</a>
+    <a href="#docs" data-nav="docs"><span class="step">6</span>Historial y docs</a>
+  </nav>
+  <label class="msel" title="Elegí un modelo: toda la interfaz pasa a mostrar sólo ese modelo">
+    <span>Modelo</span>
+    <select id="model-select" aria-label="Modelo seleccionado"><option value="">Todos los modelos</option></select>
+  </label>
+  <div class="top-status" id="top-status" aria-live="polite"></div>
+</header>
+<div class="ctxbar" id="ctxbar" hidden></div>
+
+<main id="main">
+
+<!-- 1 · INICIO ============================================================================ -->
+<section class="view" id="view-inicio" data-view="inicio">
+  <div class="hero">
+    <div>
+      <p class="eyebrow" id="home-eyebrow">Proyecto de ciencia de datos · Ciudad de Buenos Aires</p>
+      <h1 id="home-title">¿Cuánto vale un departamento en CABA?</h1>
+      <p class="lead" id="home-lead">Juntamos los avisos publicados en ZonaProp, los limpiamos y entrenamos modelos que estiman el precio de venta de un departamento, detectan avisos raros y comparan barrios.</p>
+      <div class="actions" id="home-actions">
+        <a class="btn primary big" href="#predecir">Estimar un precio</a>
+        <a class="btn big" href="#modelos">Ver resultados</a>
+      </div>
+    </div>
+    <div class="kpis" id="home-kpis"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+  </div>
+
+  <h2 class="section-title">Cómo recorrer el proyecto</h2>
+  <ol class="flow">
+    <li><a href="#datos"><b>Datos</b><span>Qué se scrapeó, cuántos avisos hay y cómo se limpian.</span></a></li>
+    <li><a href="#predecir"><b>Predecir precio</b><span>Cargá un departamento y obtené un precio estimado con su rango.</span></a></li>
+    <li><a href="#modelos"><b>Resultados por modelo</b><span>Una tarjeta por modelo (A–F) con la pregunta que responde.</span></a></li>
+    <li><a href="#experimentos"><b>Experimentos</b><span>Todas las corridas, variantes y ablaciones, para comparar.</span></a></li>
+    <li><a href="#docs"><b>Historial y docs</b><span>Cómo bajó el error iteración por iteración y el informe completo.</span></a></li>
+  </ol>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 id="home-evol-title">Evolución del error del modelo de precio (A)</h3>
+      <p class="muted small" id="home-evol-hint">Error mediano en el test de cada corrida principal: cuánto se equivoca el modelo con un departamento típico. Más bajo es mejor.</p>
+      <div id="home-evol"><div class="skeleton tall"></div></div>
+    </div>
+    <div class="card">
+      <h3 id="home-data-title">Los datos en una línea</h3>
+      <div id="home-data"><div class="skeleton tall"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 · DATOS (scraper) =================================================================== -->
+<section class="view" id="view-datos" data-view="datos" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Datos</h1>
+      <p class="lead">Los avisos salen de ZonaProp con un scraper propio. Acá ves el estado del dataset, lo descargás y, si querés, lanzás una nueva corrida.</p>
+    </div>
+  </div>
+
+  <div class="grid-main">
+    <div>
+      <div class="card">
+        <div class="card-head">
+          <h3>Estado del dataset</h3>
+          <span id="scr-pill" class="pill">Conectando…</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><b id="s-listings">–</b><span>avisos guardados</span> <small id="s-new-listings"></small></div>
+          <div class="stat"><b id="s-details">–</b><span>fichas guardadas</span> <small id="s-new-details"></small></div>
+          <div class="stat"><b id="s-searches">–</b><span>búsquedas completas</span></div>
+        </div>
+        <div class="banner" id="banner"></div>
+        <div class="now" id="now"></div>
+        <details class="sub">
+          <summary>Más indicadores de la corrida</summary>
+          <div class="stats">
+            <div class="stat"><b id="s-pending">–</b><span>fichas pendientes</span></div>
+            <div class="stat"><b id="s-rate">–</b><span id="s-rate-label">avisos por hora</span></div>
+            <div class="stat"><b id="s-failures">–</b><span>fallos</span></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Nueva corrida del scraper</h3><span class="muted small" id="plan"></span></div>
+        <p class="muted small">Cada corrida retoma donde quedó la anterior y no repite búsquedas ya terminadas. Usa la configuración de abajo (se guarda sola).</p>
+        <div class="actions">
+          <button class="btn primary" id="start">Iniciar scraper</button>
+          <button class="btn" id="stop" disabled>Detener</button>
+        </div>
+        <details class="sub">
+          <summary>Configurar la búsqueda</summary>
+          <form id="form">
+            <label class="field">Operación</label>
+            <div class="chips" id="operaciones"></div>
+            <label class="field">Tipo de propiedad</label>
+            <div class="chips" id="tipos"></div>
+            <p class="hint">Sin ninguno marcado = todos los tipos.</p>
+            <label class="field" for="zonas">Zonas</label>
+            <textarea id="zonas" rows="3" placeholder="Una por línea: rosario, palermo, villa urquiza…"></textarea>
+            <div class="chips" id="zonas-sugeridas" style="margin-top:8px"></div>
+            <p class="hint">Vacío = todo el país. Se escriben como en la URL del sitio; si una no existe, se avisa en el registro y se saltea.</p>
+            <div class="check"><input type="checkbox" id="scrapeDetails"><label for="scrapeDetails"><b>Visitar la ficha de cada aviso</b><br><span class="hint">Trae descripción completa, amenities, antigüedad y todas las fotos. Es lento (unas 15.000 fichas por día): empieza cuando termina el listado.</span></label></div>
+            <div class="check"><input type="checkbox" id="includeDevelopments"><label for="includeDevelopments">Incluir emprendimientos</label></div>
+            <div class="check"><input type="checkbox" id="trackChanges"><label for="trackChanges"><b>Guardar historial de cambios</b><br><span class="hint">Si un aviso ya guardado reaparece con otro precio, expensas, superficie o ambientes, se guarda una versión nueva. Hace falta para el modelo F.</span></label></div>
+            <details class="sub">
+              <summary>Opciones avanzadas</summary>
+              <label class="field" for="urls">Búsquedas armadas a mano</label>
+              <textarea id="urls" rows="2" placeholder="https://www.zonaprop.com.ar/departamentos-venta-palermo-con-balcon.html"></textarea>
+              <p class="hint">Hacé la búsqueda en ZonaProp con los filtros que quieras y pegá la URL (una por línea). Se suman a las de arriba.</p>
+              <label class="field">Pausa entre páginas (segundos)</label>
+              <div class="row">
+                <input type="number" id="delayMin" min="1" max="120" step="0.5" aria-label="Pausa mínima">
+                <input type="number" id="delayMax" min="1" max="300" step="0.5" aria-label="Pausa máxima">
+              </div>
+              <p class="hint">Mínima y máxima. Bajarla aumenta las verificaciones de seguridad.</p>
+              <div class="row">
+                <div><label class="field" for="maxPagesPerSearch">Páginas por búsqueda</label><input type="number" id="maxPagesPerSearch" min="1" max="500"></div>
+                <div><label class="field" for="maxDetailsPerRun">Tope de fichas por corrida</label><input type="number" id="maxDetailsPerRun" min="1" placeholder="sin tope"></div>
+              </div>
+              <p class="hint">Una búsqueda con más avisos que los que entran en esas páginas se parte sola por rango de precio. El sitio deja de paginar pasadas las 500.</p>
+              <div class="check"><input type="checkbox" id="headless"><label for="headless">Ocultar la ventana del navegador<br><span class="hint">Sólo cuando ya corrió bien con ventana: oculto no se puede resolver la verificación de seguridad.</span></label></div>
+              <div class="check"><input type="checkbox" id="blockResources"><label for="blockResources">No cargar imágenes (más rápido, más verificaciones)</label></div>
+            </details>
+          </form>
+        </details>
+        <details class="sub" id="log-box">
+          <summary>Registro de la corrida</summary>
+          <pre id="log"></pre>
+        </details>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3>Descargar</h3>
+        <div class="stack">
+          <a class="btn" href="/api/export/listings.csv">Avisos (CSV)</a>
+          <a class="btn" href="/api/export/details.csv">Fichas (CSV)</a>
+          <a class="btn" href="/api/export/history.csv" title="Todas las versiones de cada aviso, si se guardó historial de cambios">Historial de cambios (CSV)</a>
+          <button class="btn" id="open-data">Abrir carpeta de datos</button>
+        </div>
+        <p class="hint" id="data-dir"></p>
+      </div>
+      <div class="card">
+        <h3>De los avisos al modelo</h3>
+        <p class="muted small" id="funnel-hint">Cuántos avisos quedan después de cada filtro de limpieza del modelo de precio (última corrida de A).</p>
+        <div id="funnel"><div class="skeleton tall"></div></div>
+      </div>
+      <details class="card sub">
+        <summary>Mantenimiento</summary>
+        <p class="hint">"Volver a explorar" recorre de nuevo todas las búsquedas para sumar avisos publicados después; lo ya guardado no se borra.</p>
+        <div class="actions">
+          <button class="btn" id="reset">Volver a explorar desde cero</button>
+          <button class="btn danger" id="shutdown" title="Detiene la corrida y cierra el programa">Cerrar programa</button>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · PREDECIR ========================================================================== -->
+<section class="view" id="view-predecir" data-view="predecir" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Predecir precio</h1>
+      <p class="lead">Cargá los datos de un departamento en venta y el modelo A estima su precio publicado en USD, con un rango y la comparación con su barrio.</p>
+    </div>
+  </div>
+  <div class="grid-predict">
+    <div class="card">
+      <div id="pmsg" class="muted">Cargando modelos…</div>
+      <form id="pform" hidden>
+        <div class="row">
+          <div><label class="field" for="p-barrio">Barrio</label><select id="p-barrio" name="barrio"></select></div>
+          <div><label class="field" for="p-sup">Superficie total (m²)</label><input id="p-sup" type="number" name="superficie_total" value="55" min="10" max="1000" required></div>
+        </div>
+        <div class="row">
+          <div><label class="field" for="p-amb">Ambientes</label><input id="p-amb" type="number" name="ambientes" value="2" min="1" max="10"></div>
+          <div><label class="field" for="p-banos">Baños</label><input id="p-banos" type="number" name="banos" value="1" min="1" max="6"></div>
+        </div>
+        <label class="field" for="p-dir">Dirección <span class="opt">opcional, mejora la precisión</span></label>
+        <input id="p-dir" type="text" name="direccion" placeholder="p. ej. Av. Santa Fe 3400" autocomplete="off">
+        <p class="hint" id="p-dir-hint">Con calle y altura el modelo usa la ubicación dentro del barrio.</p>
+
+        <details class="sub" id="p-more">
+          <summary>Más características <span class="opt">opcional</span></summary>
+          <div class="row">
+            <div><label class="field">Dormitorios <span class="tip" title="Si no lo cambiás, se usa ambientes − 1.">?</span></label><input type="number" name="dormitorios" value="1" min="0" max="10"></div>
+            <div><label class="field">Sup. cubierta (m²)</label><input type="number" name="superficie_cubierta" placeholder="—" min="1"></div>
+          </div>
+          <div class="row">
+            <div><label class="field">Cocheras</label><input type="number" name="cocheras" value="0" min="0" max="5"></div>
+            <div><label class="field">Expensas (ARS/mes)</label><input type="number" name="expensas" placeholder="—" min="0"></div>
+          </div>
+          <div class="row">
+            <div><label class="field">Piso</label><input type="number" name="piso" placeholder="—" min="0" max="60"></div>
+            <div><label class="field">Antigüedad (años)</label><input type="number" name="antiguedad" placeholder="—" min="0" max="150"></div>
+          </div>
+          <label class="field">Palabras del aviso <span class="tip" title="Se buscan las mismas palabras clave que en los avisos reales (luminoso, a reciclar, vista abierta…).">?</span></label>
+          <input type="text" name="descripcion" placeholder="luminoso, al frente, reciclado, dependencia, vista abierta…">
+          <div class="checks">
+            <label><input type="checkbox" name="a_estrenar"> A estrenar</label>
+            <label><input type="checkbox" name="balcon_terraza"> Balcón o terraza</label>
+            <label><input type="checkbox" name="amenities"> Amenities (pileta, SUM…)</label>
+            <label><input type="checkbox" name="apto_credito"> Apto crédito</label>
+          </div>
+        </details>
+
+        <details class="sub">
+          <summary>Opciones avanzadas</summary>
+          <label class="field">Modelo guardado</label><select name="run"></select>
+          <label class="field">Tipo de propiedad</label><select name="tipo"></select>
+          <p class="hint" id="p-model-info"></p>
+        </details>
+
+        <div class="actions"><button class="btn primary big" id="pbtn" type="submit">Estimar precio</button></div>
+      </form>
+    </div>
+    <div class="card result-card" id="pout">
+      <div class="empty">
+        <div class="empty-icon">USD</div>
+        <p><b>Todavía no hay estimación.</b></p>
+        <p class="muted">Completá barrio, superficie y ambientes, y tocá <b>Estimar precio</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · RESULTADOS POR MODELO ============================================================= -->
+<section class="view" id="view-modelos" data-view="modelos" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Resultados por modelo</h1>
+      <p class="lead">Cada modelo responde una pregunta distinta. Tocá una tarjeta para ver el resultado completo, sus corridas y volver a entrenarlo.</p>
+    </div>
+  </div>
+  <div class="model-grid" id="model-grid"><div class="skeleton tall"></div><div class="skeleton tall"></div><div class="skeleton tall"></div></div>
+  <details class="card sub guide">
+    <summary>¿Por cuál empiezo?</summary>
+    <ol>
+      <li>Empezá por <b>A</b>: te dice si el modelo de precio es confiable.</li>
+      <li>Después <b>B</b>: usa la misma lógica para marcar gangas y errores de datos.</li>
+      <li><b>C</b> compara alquiler contra venta por barrio, con el dólar MEP del día.</li>
+      <li><b>D</b> sirve para explorar el mercado sin una pregunta puntual.</li>
+      <li><b>E</b> muestra qué palabras de las descripciones mueven el precio.</li>
+      <li><b>F</b> queda para más adelante: necesita varias pasadas con historial de cambios.</li>
+    </ol>
+  </details>
+</section>
+
+<!-- Detalle de un modelo -->
+<section class="view" id="view-modelo" data-view="modelo" data-parent="modelos" hidden></section>
+<!-- Detalle de una corrida -->
+<section class="view" id="view-corrida" data-view="corrida" data-parent="experimentos" hidden></section>
+
+<!-- 5 · EXPERIMENTOS ====================================================================== -->
+<section class="view" id="view-experimentos" data-view="experimentos" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Experimentos</h1>
+      <p class="lead">Todo lo que se probó: cada corrida guardada, la comparación de variantes del modelo de precio y las ablaciones con validación cruzada.</p>
+    </div>
+  </div>
+  <div class="seg" role="tablist" id="exp-tabs">
+    <button role="tab" data-t="corridas">Todas las corridas</button>
+    <button role="tab" data-t="variantes">Comparar variantes de A</button>
+    <button role="tab" data-t="ablacion">Ablaciones (A2)</button>
+    <button role="tab" data-t="glosario">Qué es cada variante</button>
+  </div>
+  <div id="exp-body"></div>
+</section>
+
+<!-- 6 · HISTORIAL Y DOCUMENTACIÓN ========================================================= -->
+<section class="view" id="view-docs" data-view="docs" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Historial y documentación</h1>
+      <p class="lead">El registro de cada iteración del modelo de precio y el informe completo del proceso (limpieza, evaluación, resultados y límites).</p>
+    </div>
+  </div>
+  <div class="seg" role="tablist" id="doc-tabs">
+    <button role="tab" data-t="historial">Historial del modelo A</button>
+    <button role="tab" data-t="doc">Documentación del modelo A</button>
+    <button role="tab" data-t="anterior">Vista anterior</button>
+  </div>
+  <div id="doc-body"></div>
+</section>
+
+</main>
+<footer class="foot">
+  <span id="py" class="muted small"></span>
+  <span class="muted small">Pantallas anteriores: <a href="/clasico">scraper</a> · <a href="/clasico/modelos">modelos</a></span>
+</footer>
+<script src="/ui/scraper.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>

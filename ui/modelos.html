@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZonaProp · Modelos</title>
+<title>ZonaProp · Modelos (vista anterior)</title>
 <style>
   :root { --bg:#f5f6f8; --panel:#fff; --ink:#1c2330; --muted:#667085; --line:#e2e5ea; --accent:#e8590c; --accent-ink:#fff; --ok:#1a7f4b; --err:#c0392b; --chip:#eef0f4; }
   @media (prefers-color-scheme: dark) { :root { --bg:#12151a; --panel:#1b2027; --ink:#e6e9ee; --muted:#98a2b3; --line:#2c333d; --chip:#262d37; --ok:#4cc38a; --err:#ff7b6b; } }
@@ -61,7 +61,7 @@
 <header>
   <h1>ZonaProp · Modelos (CABA)</h1>
   <span id="py" class="hint"></span>
-  <a href="/">← Scraper</a>
+  <a href="/clasico">← Scraper (vista anterior)</a> <a href="/">Nueva interfaz</a>
 </header>
 <main>
   <div>
@@ -390,7 +390,7 @@ function md(src) {
 }
 async function loadHist() {
   const d = await api('/api/ml/historial');
-  $('#hist').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)} ? orden cronol?gico; cada corrida sigue disponible en ?Comparar corridas?</p>` + md(d.markdown) : '<p class="err">No se encontr? docs/historial_modelo_precio.md</p>';
+  $('#hist').innerHTML = d.markdown ? `<p class="hint">${esc(d.name)} · orden cronológico; cada corrida sigue disponible en «Comparar corridas»</p>` + md(d.markdown) : '<p class="err">No se encontró docs/historial_modelo_precio.md</p>';
 }
 async function loadDoc() {
   const d = await api('/api/ml/doc');
